@@ -1,0 +1,26 @@
+networks:
+  localNetwork:
+    external: true
+
+services:
+  waline:
+    container_name: waline
+    image: lizheming/waline:latest
+    restart: always
+    networks:
+      - localNetwork
+    # ports:
+    #   - 8360:8360
+    volumes:
+      - ./data:/app/data
+    environment:
+      TZ: "Asia/Shanghai"
+      SQLITE_PATH: "/app/data"
+      JWT_TOKEN: "ABCabc123"
+      SITE_NAME: "Test Site" # 网站名，会在消息推送中显示
+      SERVER_URL: https://waline.test.cn
+      AUTHOR_EMAIL: "test@yeah.net" # 博主邮箱，用来区分发布的评论是否是博主
+      DISABLE_REGION: "false" # 是否隐藏评论者的归属地
+      DISABLE_USERAGENT: "false" # 是否隐藏评论者的 UA
+      SECURE_DOMAINS: "a.test.cn,b.test.cn" # 安全域名配置，逗号分隔多条
+      COMMENT_AUDIT: "yes" # 评论发布审核开关

@@ -1,0 +1,20 @@
+services:
+  siyuan:
+    image: apkdv/siyuan-unlock
+    container_name: siyuan
+    restart: always
+    networks:
+      - localNetwork
+    # ports:
+    #   - "6806:6806"
+    volumes:
+      - ./workspace:/siyuan/workspace
+    environment:
+      - LANG=zh_CN.UTF-8
+      - LC_ALL=zh_CN.UTF-8
+    command:
+      ["--workspace=/siyuan/workspace/", "--accessAuthCode=3m6lrnCaRJcUQE"]
+
+networks:
+  localNetwork:
+    external: true

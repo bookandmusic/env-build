@@ -1,0 +1,22 @@
+services:
+  ubuntu:
+    container_name: ubuntu
+    build: .
+    command: /sbin/init
+    privileged: true
+    cgroup: host # 对应 --cgroupns=host
+    restart: always
+    network_mode: "host"
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - /lib/modules:/lib/modules:ro
+      - /volume1/project/:/root/project
+    tmpfs:
+      - /run
+      - /run/lock
+    dns:
+      - 8.8.8.8
+
+networks:
+  localNetwork:
+    external: true

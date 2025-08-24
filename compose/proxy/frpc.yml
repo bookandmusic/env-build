@@ -1,0 +1,17 @@
+services:
+  frpc:
+    container_name: frpc
+    image: fatedier/frpc:v0.61.2
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./conf:/opt/frpc/conf
+      - ./log:/opt/frpc/logs
+    networks:
+      - localNetwork
+    command: -c /opt/frpc/conf/frpc.toml # 指向 TOML 配置
+
+networks:
+  localNetwork:
+    external: true

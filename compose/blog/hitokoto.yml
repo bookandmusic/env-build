@@ -1,0 +1,24 @@
+networks:
+  localNetwork:
+    external: true
+
+services:
+  hitokoto:
+    networks:
+      - localNetwork
+    image: hitokoto/api:release
+    container_name: hitokoto
+    environment:
+      NODE_ENV: production
+      # 服务配置
+      url: https://hitokoto.test.cn # 请修改为您想要部署的域名
+      api_name: hitokoto # 改一个好听的标识吧
+      redis.host: redis # Redis 连接地址
+      redis.port: 6379 # Redis 连接端口
+      # redis.password:
+      # redis.database: 0
+    # ports:
+    #   - 8000:8000
+    restart: always
+    volumes:
+      - ./data:/usr/src/app/data

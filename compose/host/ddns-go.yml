@@ -1,0 +1,8 @@
+services:
+  ddns-go:
+    image: jeessy/ddns-go
+    container_name: ddns-go
+    restart: always
+    volumes:
+      - ./config/.ddns_go_config.yaml:/root/.ddns_go_config.yaml
+    network_mode: "host"

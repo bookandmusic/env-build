@@ -1,0 +1,21 @@
+networks:
+  localNetwork:
+    external: true
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: always
+    networks:
+      - localNetwork
+    ports:
+      - "9000:9000"
+      - "9191:9191"
+    volumes:
+      - ./data:/data
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "jMFOLs!6&km^N7"
+      MINIO_BROWSER_REDIRECT_URL: "https://minio.local.bookandmusic.cn"
+    command: server --console-address ":9191" /data

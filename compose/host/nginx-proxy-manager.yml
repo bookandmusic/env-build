@@ -1,0 +1,18 @@
+services:
+  nginx-proxy-manager:
+    container_name: nginx-proxy-manager
+    image: "chishin/nginx-proxy-manager-zh:2.12.2"
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+    networks:
+      - localNetwork
+
+networks:
+  localNetwork:
+    external: true

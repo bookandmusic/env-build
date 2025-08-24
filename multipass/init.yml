@@ -1,0 +1,12 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+runcmd:
+  # 修改系统镜像源为阿里云
+  - sed -i 's@//.*archive.ubuntu.com@//mirrors.aliyun.com@g' /etc/apt/sources.list
+  - sed -i 's@//.*archive.ubuntu.com@//mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources
+
+  # 拷贝并执行 run.sh（假设 run.sh 已经存在于 /usr/local/scripts/）
+  - chmod +x /tmp/scripts/run.sh
+  - /tmp/scripts/run.sh

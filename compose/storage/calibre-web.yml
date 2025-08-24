@@ -1,0 +1,20 @@
+services:
+  calibre-web:
+    image: linuxserver/calibre-web:0.6.24
+    container_name: calibre-web
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./config:/config
+      - /home/bookandmusic/Books:/books
+      - ./metadata_provider:/app/calibre-web/cps/metadata_provider/
+    networks:
+      - localNetwork
+    # ports:
+    #   - 8083:8083
+    restart: unless-stopped
+
+networks:
+  localNetwork:
+    external: true

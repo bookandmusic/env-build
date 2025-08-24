@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.0.33
+    ports:
+      - 3306:3306
+    networks:
+      - localNetwork
+    restart: always
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=!QAZ2wsx
+      - PUID=1000
+      - PGID=1000
+      - UMASK=022
+
+    volumes:
+      - "./data:/var/lib/mysql"
+      - "./conf:/etc/mysql/conf.d"
+      - "./logs:/var/log/"
+
+networks:
+  localNetwork:
+    external: true

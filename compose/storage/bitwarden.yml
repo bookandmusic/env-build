@@ -1,0 +1,14 @@
+networks:
+  localNetwork:
+    external: true
+services:
+  bitwarden:
+    container_name: bitwarden
+    image: vaultwarden/server:latest
+    networks:
+      - localNetwork
+    # ports:
+    #   - 80:80
+    restart: always
+    volumes:
+      - ./data:/data

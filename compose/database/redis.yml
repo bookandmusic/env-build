@@ -1,0 +1,15 @@
+networks:
+  localNetwork:
+    external: true
+
+services:
+  redis:
+    networks:
+      - localNetwork
+    image: redis
+    restart: always
+    container_name: redis
+    volumes:
+      - ./data:/data
+    ports:
+      - 6379:6379

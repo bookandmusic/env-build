@@ -1,0 +1,13 @@
+services:
+  speedtest-x:
+    image: badapple9/speedtest-x
+    container_name: speedtest-x
+    networks:
+      - localNetwork
+    # ports:
+    #   - "80:80"
+    restart: always
+
+networks:
+  localNetwork:
+    external: true

@@ -1,0 +1,20 @@
+services:
+  homepage:
+    image: gethomepage/homepage:latest
+    container_name: homepage
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: "*"
+    ports:
+      - 3000:3000
+    volumes:
+      - ./config:/app/config # Make sure your local config directory exists
+      - ./logs:/logs
+      - ./icons:/app/public/icons
+      - ./images:/app/public/images
+      - /var/run/docker.sock:/var/run/docker.sock # optional, for docker integrations
+    restart: always
+
+networks:
+  default:
+    name: localNetwork
+    external: true

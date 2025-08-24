@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: pgsql
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: "!QAZ2wsx"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - localNetwork
+
+networks:
+  localNetwork:
+    external: true

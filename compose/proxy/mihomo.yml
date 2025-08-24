@@ -1,0 +1,19 @@
+services:
+  mihomo:
+    container_name: mihomo
+    image: docker.io/metacubex/mihomo:Alpha
+    restart: always
+    networks:
+      - localNetwork
+    ports:
+      # - "9090:9090"
+      - "7890:7890"
+    cap_add:
+      - ALL
+    volumes:
+      - ./config:/root/.config/mihomo
+      - /dev/net/tun:/dev/net/tun
+
+networks:
+  localNetwork:
+    external: true

@@ -1,0 +1,13 @@
+services:
+  chml-frpc:
+    build: .
+    container_name: chml-frpc
+    networks:
+      - localNetwork
+    volumes:
+      - ./config:/app/config
+    restart: always
+
+networks:
+  localNetwork:
+    external: true
