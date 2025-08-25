@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # ===============================
 # 1️⃣ 安装基础依赖
 # ===============================
@@ -13,18 +16,44 @@ fi
 
 SUDO="sudo"
 
-echo "🔄 更新 apt 软件源..."
-$SUDO apt-get update -y
+# -------------------------------
+# 检查哪些命令缺失
+# -------------------------------
+MISSING_PACKAGES=()
 
-echo "🔧 安装必备软件..."
 for pkg in "${REQUIRED_PACKAGES[@]}"; do
-    if command -v "$pkg" >/dev/null 2>&1; then
-        echo "✅ $pkg 已安装"
+    # xz-utils 提供 xz 命令
+    cmd="$pkg"
+    if [ "$pkg" = "xz-utils" ]; then
+        cmd="xz"
+    fi
+
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        MISSING_PACKAGES+=("$pkg")
     else
-        echo "⬇️ 安装 $pkg ..."
-        $SUDO apt-get install -y "$pkg"
+        echo "✅ $pkg 已安装"
     fi
 done
 
-echo "🧹 清理 apt 缓存..."
-$SUDO rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+# -------------------------------
+# 安装缺失的软件
+# -------------------------------
+if [ "${#MISSING_PACKAGES[@]}" -gt 0 ]; then
+    echo "🔄 检测到缺失软件: ${MISSING_PACKAGES[*]}"
+    echo "🔄 更新 apt 软件源..."
+    $SUDO apt-get update -y
+
+    echo "⬇️ 安装缺失软件..."
+    $SUDO apt-get install -y "${MISSING_PACKAGES[@]}"
+    # -------------------------------
+    # 清理 apt 缓存
+    # -------------------------------
+    echo "🧹 清理 apt 缓存..."
+    $SUDO rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
+    echo "🎉 基础依赖安装完成"
+else
+    echo "✅ 所有必备软件已安装"
+fi
+
+

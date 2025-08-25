@@ -124,6 +124,49 @@ else
 fi
 
 # ---------------------------
+# 配置 systemd service (二进制安装必需)
+# ---------------------------
+echo "⚙️ 配置 systemd service..."
+sudo tee /etc/systemd/system/docker.service > /dev/null <<EOF
+[Unit]
+Description=Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network-online.target docker.socket firewalld.service containerd.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=${BIN_DIR}/dockerd
+ExecReload=/bin/kill -s HUP \$MAINPID
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Delegate=yes
+KillMode=process
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/docker.socket > /dev/null <<'EOF'
+[Unit]
+Description=Docker Socket for the API
+PartOf=docker.service
+
+[Socket]
+ListenStream=/var/run/docker.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=docker
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+# ---------------------------
 # 配置 daemon.json (总是更新)
 # ---------------------------
 sudo mkdir -p /etc/docker
@@ -164,10 +207,10 @@ EOF
 echo "🔧 检查 Docker 服务状态..."
 if ! systemctl is-active --quiet docker; then
     echo "🚀 Docker 未运行，尝试启动..."
-    sudo systemctl daemon-reexec
     sudo systemctl daemon-reload
-    sudo systemctl enable docker
-    sudo systemctl start docker
+    sudo systemctl enable docker.socket
+    sudo systemctl start docker.socket
+    sudo systemctl restart docker
     sleep 2
 fi
 
