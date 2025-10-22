@@ -1,0 +1,66 @@
+name: Build and Push Multi-Arch Ubuntu-dev Docker Image
+
+on:
+  push:
+    tags:
+      - 'v*'           # 匹配 v 开头的标签，如 v1.0.0, v2.1.0
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker 镜像标签（留空使用默认日期格式）'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.actor }}/ubuntu-dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set tags
+        id: vars
+        run: |
+          DATE=$(date +'%Y%m%d')
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-8)
+          INPUT_TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$INPUT_TAG" ]; then
+            TAG="${DATE}-${SHORT_SHA}"
+          else
+            TAG="$INPUT_TAG"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "DATE_TAG=${DATE}-${SHORT_SHA}"
+          echo "LATEST_TAG=latest"
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
