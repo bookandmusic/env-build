@@ -1,23 +1,26 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Shanghai INSTALL_CODE_SERVER=true
+ENV TZ=Asia/Shanghai INSTALL_CODE_SERVER=true INSTALL_DOCKER=false CONFIG_USER=true WSL_CONFIG=false
 SHELL ["/bin/bash", "-c"]
 
 # 层1: 所有 root 操作 + 设置脚本权限
 COPY scripts/ /tmp/scripts/
-RUN chmod +x /tmp/scripts/*.sh && \
-    /tmp/scripts/root-setup.sh && \
+RUN find /tmp/scripts -type f -name "*.sh" -exec chmod +x {} \; && \
+    cp /tmp/scripts/configs/start-services.sh /usr/local/bin/ && \
+    chmod +x /usr/local/bin/start-services.sh && \
+    /tmp/scripts/orchestration/root-setup.sh && \
     chown -R ubuntu:ubuntu /tmp/scripts
 
 # 层2: 用户级操作 + 清理脚本
 USER ubuntu  
 WORKDIR /home/ubuntu
 SHELL ["/bin/zsh", "-lc"]
-RUN /tmp/scripts/user-setup.sh && \
+RUN /tmp/scripts/orchestration/user-setup.sh && \
     rm -rf /tmp/scripts
 
-# 暴露端口
-EXPOSE 8080
-# 默认启动 code-server
+# 暴露SSH和应用端口
+EXPOSE 22 8080
+# 使用entrypoint启动sshd和主服务
+ENTRYPOINT ["/usr/local/bin/start-services.sh"]
 CMD ["code-server", "--bind-addr", "0.0.0.0:8080", "--auth", "password"]

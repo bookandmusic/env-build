@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-source /tmp/scripts/common.sh
+# 动态获取脚本根目录
+SCRIPT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+source "$SCRIPT_DIR/configs/common.sh"
 
 log "Setting up Oh My Zsh and plugins..."
 

@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-source /tmp/scripts/common.sh
+# 动态获取脚本根目录
+SCRIPT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+source "$SCRIPT_DIR/configs/common.sh"
 
 log "Installing system dependencies..."
 
@@ -10,7 +12,7 @@ apt-get install -y --no-install-recommends \
     net-tools iproute2 iputils-ping dnsutils traceroute \
     curl wget sudo git vim unzip tar gnupg lsb-release software-properties-common \
     ca-certificates zsh build-essential procps jq htop gnupg2 lsb-release \
-    openssh-client openssh-server tree
+    openssh-client openssh-server tree netcat-openbsd
 
 rm -rf /var/lib/apt/lists/*
 
