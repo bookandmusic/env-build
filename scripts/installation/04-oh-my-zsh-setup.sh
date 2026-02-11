@@ -1,14 +1,14 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
-# 动态获取脚本根目录
-SCRIPT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+# 标准脚本初始化
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$SCRIPT_DIR/configs/common.sh"
 
 log "Setting up Oh My Zsh and plugins..."
 
 # 克隆 Oh My Zsh
-git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
+safe_git_clone "https://github.com/ohmyzsh/ohmyzsh.git" "$HOME/.oh-my-zsh"
 
 # 创建插件目录
 mkdir -p "$HOME/.oh-my-zsh/custom/plugins"
@@ -22,7 +22,7 @@ plugins=(
 
 for plugin in "${plugins[@]}"; do
     name=$(basename "$plugin")
-    git clone --depth=1 "https://github.com/${plugin}" "$HOME/.oh-my-zsh/custom/plugins/${name}"
+    safe_git_clone "https://github.com/${plugin}" "$HOME/.oh-my-zsh/custom/plugins/${name}"
 done
 
 # 配置 .zshrc

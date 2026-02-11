@@ -1,0 +1,296 @@
+name: Export WSL Distribution
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_registry:
+        description: '镜像仓库'
+        required: true
+        default: 'ghcr.io'
+        type: choice
+        options:
+          - ghcr.io
+          - docker.io
+          - gcr.io
+      image_namespace:
+        description: '镜像命名空间（用户名或组织名）'
+        required: true
+        default: 'github-actor'
+      image_repository:
+        description: '镜像仓库名'
+        required: true
+        default: 'ubuntu-dev'
+      image_tag:
+        description: '镜像标签'
+        required: true
+        default: 'latest'
+      image_arch:
+        description: '镜像架构（例如 amd64、arm64）'
+        required: false
+        default: 'amd64'
+        type: choice
+        options:
+          - amd64
+          - arm64
+      distribution_name:
+        description: 'WSL 分发版名称'
+        required: false
+        default: 'ubuntu-dev'
+
+jobs:
+  # Job 1: 检查 Release 是否存在
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_exists: ${{ steps.check_release.outputs.result }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set release tag
+        run: |
+          REGISTRY="${{ github.event.inputs.image_registry }}"
+          NAMESPACE="${{ github.event.inputs.image_namespace }}"
+          if [ "$NAMESPACE" = "github-actor" ]; then
+            NAMESPACE="${{ github.actor }}"
+          fi
+          REPOSITORY="${{ github.event.inputs.image_repository }}"
+          FULL_IMAGE_NAME="$REGISTRY/$NAMESPACE/$REPOSITORY"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          IMAGE_ARCH="${{ github.event.inputs.image_arch }}"
+          RELEASE_TAG="wsl-${REGISTRY}-${NAMESPACE}-${REPOSITORY}-${IMAGE_TAG}-${IMAGE_ARCH}"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+
+      - name: Check if release exists
+        id: check_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = process.env.RELEASE_TAG;
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag
+              });
+              return 'true';
+            } catch (e) {
+              if (e.status === 404) return 'false';
+              throw e;
+            }
+          result-encoding: string
+
+  export-wsl:
+    needs: check-release
+    if: ${{ needs.check-release.outputs.release_exists != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 设置环境变量
+      - name: Set environment variables
+        id: vars
+        run: |
+          REGISTRY="${{ github.event.inputs.image_registry }}"
+          NAMESPACE="${{ github.event.inputs.image_namespace }}"
+          if [ "$NAMESPACE" = "github-actor" ]; then
+            NAMESPACE="${{ github.actor }}"
+          fi
+          REPOSITORY="${{ github.event.inputs.image_repository }}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          IMAGE_ARCH="${{ github.event.inputs.image_arch }}"
+          DISTRO_NAME="${{ github.event.inputs.distribution_name }}"
+
+          FULL_IMAGE_NAME="$REGISTRY/$NAMESPACE/$REPOSITORY"
+          REGISTRY_DISPLAY="$REGISTRY"
+
+          RELEASE_TAG="wsl-${REGISTRY}-${NAMESPACE}-${REPOSITORY}-${IMAGE_TAG}-${IMAGE_ARCH}"
+
+          echo "REGISTRY=$REGISTRY" >> $GITHUB_ENV
+          echo "NAMESPACE=$NAMESPACE" >> $GITHUB_ENV
+          echo "REPOSITORY=$REPOSITORY" >> $GITHUB_ENV
+          echo "FULL_IMAGE_NAME=$FULL_IMAGE_NAME" >> $GITHUB_ENV
+          echo "REGISTRY_DISPLAY=$REGISTRY_DISPLAY" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "IMAGE_ARCH=$IMAGE_ARCH" >> $GITHUB_ENV
+          echo "DISTRO_NAME=$DISTRO_NAME" >> $GITHUB_ENV
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+          echo "TAR_FILE=${RELEASE_TAG}.tar" >> $GITHUB_ENV
+
+      # 登录到 Registry（自动区分 Docker Hub / 其他）
+      - name: Log in to container registry
+        if: ${{ !contains(env.REGISTRY_DISPLAY, 'docker.io') }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DISPLAY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: ${{ contains(env.REGISTRY_DISPLAY, 'docker.io') }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DISPLAY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 拉取镜像
+      - name: Pull image
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          echo "🚀 正在拉取镜像: $IMAGE"
+          docker pull --platform linux/${{ env.IMAGE_ARCH }} $IMAGE
+
+      # 校验架构
+      - name: Verify image architecture
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          ARCH=$(docker inspect $IMAGE --format '{{.Architecture}}')
+          echo "📐 镜像架构: $ARCH"
+          if [ "$ARCH" != "${{ env.IMAGE_ARCH }}" ]; then
+            echo "❌ 镜像架构不匹配: $ARCH ≠ ${{ env.IMAGE_ARCH }}"
+            exit 1
+          fi
+
+      # 导出容器为 tar
+      - name: Export container as tar
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          TAR_FILE="${{ env.TAR_FILE }}"
+          echo "📦 导出容器为 tar 文件..."
+          CONTAINER_ID=$(docker create "$IMAGE" /bin/true)
+          docker export "$CONTAINER_ID" -o "$TAR_FILE"
+          docker rm "$CONTAINER_ID"
+          TAR_SIZE=$(stat -c%s "$TAR_FILE")
+          echo "TAR_SIZE=$TAR_SIZE" >> $GITHUB_ENV
+          echo "✅ 导出完成: $(du -h $TAR_FILE)"
+
+      # 压缩
+      - name: Compress tar
+        run: |
+          echo "🗜️ 压缩中..."
+          gzip -9 "${{ env.TAR_FILE }}"
+          COMPRESSED_FILE="${{ env.TAR_FILE }}.gz"
+          COMPRESSED_SIZE=$(stat -c%s "$COMPRESSED_FILE")
+          echo "COMPRESSED_FILE=$COMPRESSED_FILE" >> $GITHUB_ENV
+          echo "COMPRESSED_SIZE=$COMPRESSED_SIZE" >> $GITHUB_ENV
+
+          # 计算 MB 并写入 env
+          SIZE_MB=$(( COMPRESSED_SIZE / 1024 / 1024 ))
+          echo "SIZE_MB=$SIZE_MB" >> $GITHUB_ENV
+
+          echo "✅ 压缩完成: $(du -h $COMPRESSED_FILE)"
+
+      # 大于 2GB 自动分卷
+      - name: Split file if > 2GB
+        run: |
+          MAX_SIZE=2147483648
+          if [ ${{ env.COMPRESSED_SIZE }} -gt $MAX_SIZE ]; then
+            echo "⚠️ 文件超过 2GB，开始分卷..."
+            split -b 1800m "${{ env.COMPRESSED_FILE }}" "${{ env.COMPRESSED_FILE }}.part."
+            echo "UPLOAD_FILES=${{ env.COMPRESSED_FILE }}.part.*" >> $GITHUB_ENV
+            echo "NEEDS_MERGE=true" >> $GITHUB_ENV
+          else
+            echo "UPLOAD_FILES=${{ env.COMPRESSED_FILE }}" >> $GITHUB_ENV
+            echo "NEEDS_MERGE=false" >> $GITHUB_ENV
+          fi
+
+      # 生成 Release 内容
+      - name: Generate Release body
+        run: |
+          if [ "${{ env.NEEDS_MERGE }}" = "true" ]; then
+            BODY_CONTENT='
+          ## 🐧 WSL 开发环境分发版
+
+          当前版本为 **${{ env.FULL_IMAGE_NAME }}:${{ env.IMAGE_TAG }}** 的 `${{ env.IMAGE_ARCH }}` 架构导出包。
+
+          ### 🗂️ 文件分卷说明
+          压缩包体积超过 **2 GB**，系统已自动分卷。请下载所有分卷文件后再合并并解压。
+
+          示例文件：
+          ```
+          ${{ env.COMPRESSED_FILE }}.part.aa
+          ${{ env.COMPRESSED_FILE }}.part.ab
+          ...
+          ```
+
+          #### 🔧 合并分卷
+          ```cmd
+          copy /b ${{ env.COMPRESSED_FILE }}.part.* ${{ env.COMPRESSED_FILE }}
+          ```
+
+          #### 🗜️ 解压缩
+          使用 7-Zip 或 WinRAR 解压，得到：
+          ```
+          ${{ env.TAR_FILE }}
+          ```
+
+          ### ⚙️ 导入到 WSL
+          ```powershell
+          mkdir C:\WSL\${{ env.DISTRO_NAME }}
+          wsl --import ${{ env.DISTRO_NAME }} C:\WSL\${{ env.DISTRO_NAME }} .\${{ env.TAR_FILE }} --version 2
+          wsl -d ${{ env.DISTRO_NAME }}
+          ```
+
+          ### ✅ 验证导入
+          ```powershell
+          wsl -l -v
+          ```
+          '
+          else
+            BODY_CONTENT='
+          ## 🐧 WSL 开发环境分发版
+
+          当前版本为 **${{ env.FULL_IMAGE_NAME }}:${{ env.IMAGE_TAG }}** 的 `${{ env.IMAGE_ARCH }}` 架构导出包。
+
+          ### 📦 文件信息
+          - 文件名：`${{ env.COMPRESSED_FILE }}`
+          - 文件大小：≈ ${{ env.SIZE_MB }} MB
+
+          ### 🗜️ 解压缩
+          使用 7-Zip 或 WinRAR 解压，得到：
+          ```
+          ${{ env.TAR_FILE }}
+          ```
+
+          ### ⚙️ 导入到 WSL
+          ```powershell
+          mkdir C:\WSL\${{ env.DISTRO_NAME }}
+          wsl --import ${{ env.DISTRO_NAME }} C:\WSL\${{ env.DISTRO_NAME }} .\${{ env.TAR_FILE }} --version 2
+          wsl -d ${{ env.DISTRO_NAME }}
+          ```
+
+          ### ✅ 验证导入
+          ```powershell
+          wsl -l -v
+          ```
+          '
+          fi
+          echo "$BODY_CONTENT" > RELEASE_BODY.md
+          echo "RELEASE_BODY_FILE=RELEASE_BODY.md" >> $GITHUB_ENV
+
+      # 上传 Release
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1.20.0
+        with:
+          tag: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          bodyFile: ${{ env.RELEASE_BODY_FILE }}
+          artifacts: ${{ env.UPLOAD_FILES }}
+          artifactContentType: application/gzip
+          allowUpdates: true
+
+      # 打印汇总
+      - name: Output summary
+        run: |
+          echo "🎉 导出完成!"
+          echo "📦 分发版名称: ${{ env.DISTRO_NAME }}"
+          echo "🏷️  版本标签: ${{ env.RELEASE_TAG }}"
+          echo "🖥️  架构: ${{ env.IMAGE_ARCH }}"
+          echo "📁 文件: ${{ env.UPLOAD_FILES }}"
+          echo "📝 Release Body: RELEASE_BODY.md"

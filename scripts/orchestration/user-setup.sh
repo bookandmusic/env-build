@@ -1,9 +1,12 @@
-#!/bin/zsh
-set -e
+#!/bin/bash
+set -eo pipefail
 
-# 动态获取脚本根目录
-SCRIPT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+# 标准脚本初始化
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$SCRIPT_DIR/configs/common.sh"
+
+# 预检查
+run_preflight_checks
 
 log "Starting user-level setup..."
 
@@ -18,7 +21,7 @@ log "3. Setting up vimrc..."
 
 if [ "${INSTALL_CODE_SERVER}" = "true" ]; then
     log "4. Installing code-server..."
-    "$SCRIPT_DIR/installation/07-coder-server.sh"
+    "$SCRIPT_DIR/installation/07-code-server.sh"
 else
     log "Skipping code-server installation."
 fi

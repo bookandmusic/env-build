@@ -1,59 +1,78 @@
 # Ubuntu 开发环境构建工具
 
-[English Version](README_en.md) | [Docker镜像构建指南](doc/Docker.md)
+自动化构建标准化 Ubuntu 开发环境，支持独立脚本执行、Docker 容器和 WSL2 导入三种部署方式。基础镜像为 ubuntu:24.04。
 
-本项目提供了一套自动化脚本，用于构建标准化的Ubuntu开发环境。支持Docker容器、WSL2以及物理机/虚拟机环境，可灵活配置各种开发工具链。
+## 快速开始
 
-## 主要功能
+### 独立脚本执行
 
-- 系统基础依赖安装（开发工具、网络工具等）
-- Docker环境配置（可选）
-- 用户环境配置（Zsh、Oh My Zsh、vimrc等）
-- Code-Server在线IDE支持（可选）
-- WSL2环境优化配置（可选）
-
-## 环境变量说明
-
-| 环境变量 | 默认值 | 说明 |
-|----------|--------|------|
-| `INSTALL_DOCKER` | `false` | 是否安装Docker，设为`true`时安装 |
-| `CONFIG_USER` | `false` | 是否创建ubuntu用户并设置密码和sudo权限 |
-| `WSL_CONFIG` | `false` | 是否配置WSL2专用设置（systemd支持） |
-| `INSTALL_CODE_SERVER` | `false` | 是否安装Code-Server在线IDE |
-
-## 用法1：单独执行脚本
-
-适用于在现有Ubuntu系统上配置开发环境：
+适用于物理机、虚拟机或已有 Ubuntu 系统：
 
 ```bash
-# 1. 以root身份执行系统级配置
-cd scripts/orchestration
-sudo ./root-setup.sh
+# 按需设置环境变量
+export INSTALL_DOCKER=true
+export CONFIG_USER=true
 
-# 2. 切换到ubuntu用户执行用户级配置
+# root 级配置（系统依赖、Docker、用户创建）
+sudo ./scripts/orchestration/root-setup.sh
+
+# 用户级配置（zsh、工具链、vim、code-server）
 su - ubuntu
-cd ~/projects/env-build/scripts/orchestration
-./user-setup.sh
+./scripts/orchestration/user-setup.sh
 ```
 
-> 注意：执行前请根据需要设置环境变量，例如：
-> ```bash
-> export CONFIG_USER=true
-> export WSL_CONFIG=true
-> ```
-
-## 用法2：使用构建好的镜像
-
-启动预构建的开发环境容器：
+### Docker 构建
 
 ```bash
-# 启动基础开发环境
-docker run -d -p 22:22 --name ubuntu-dev bookandmusic/ubuntu-dev:latest
+# SSH 最小容器
+docker build -t ubuntu-dev:latest .
+docker run -d -p 22:22 --name ubuntu-dev ubuntu-dev:latest
 
-# 启动带Code-Server的环境（端口8080）
-docker run -d -p 22:22 -p 8080:8080 --name coder-server bookandmusic/coder-server:latest
+# SSH + Code-Server 容器
+docker build --build-arg INSTALL_CODE_SERVER=true -t code-server:latest .
+docker run -d -p 22:22 -p 8080:8080 --name code-server code-server:latest
 ```
 
-## 更多文档
+### WSL 导入
 
-- [Docker镜像构建指南](doc/Docker.md)
+```bash
+# 构建 WSL 专用镜像并导出
+docker build --build-arg WSL_CONFIG=true -t ubuntu-dev-wsl:latest .
+./scripts/export-wsl.sh
+
+# Windows 侧导入
+wsl --import UbuntuDev <安装路径> ubuntu-dev-wsl.tar
+```
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `INSTALL_DOCKER` | `true` | 安装 Docker（容器内自动禁用） |
+| `CONFIG_USER` | `true` | 创建 ubuntu 用户并配置 sudo |
+| `WSL_CONFIG` | `true` | WSL2 systemd 配置 |
+| `INSTALL_CODE_SERVER` | `false` | 安装 Code-Server IDE |
+
+值只接受 `true` / `false` 字符串。Docker 构建时 `INSTALL_DOCKER` 硬编码为 `false`。
+
+## 架构
+
+两阶段编排模型：
+
+**Stage 1 — root-setup.sh**（root 权限）：
+1. `01-system-deps.sh` — 系统基础包
+2. `02-docker-setup.sh` — Docker（条件执行）
+3. `03-user-config.sh` — 用户创建、WSL 配置、starship
+
+**Stage 2 — user-setup.sh**（ubuntu 用户）：
+
+4. `04-oh-my-zsh-setup.sh` — Zsh + 插件
+5. `05-toolchain-setup.sh` — mise/Homebrew 管理的开发工具链
+6. `06-vimrc.sh` — Vim 配置
+7. `07-code-server.sh` — Code-Server IDE（条件执行）
+
+核心配置：
+
+- `scripts/configs/common.sh` — 公共函数库 + 镜像源常量
+- `scripts/configs/variables.sh` — 环境变量默认值与验证
+- `scripts/configs/start-services.sh` — 容器入口点脚本

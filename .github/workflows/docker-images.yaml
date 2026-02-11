@@ -1,9 +1,9 @@
-name: Build and Push Multi-Arch Ubuntu-dev Docker Image
+name: Build and Push Multi-Arch Docker Images
 
 on:
   push:
     tags:
-      - 'v*'           # 匹配 v 开头的标签，如 v1.0.0, v2.1.0
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -13,7 +13,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.actor }}/ubuntu-dev
 
 jobs:
   build:
@@ -21,6 +20,16 @@ jobs:
     permissions:
       packages: write
       contents: read
+
+    strategy:
+      matrix:
+        include:
+          - image: ubuntu-dev
+            build-args: ""
+          - image: code-server
+            build-args: "INSTALL_CODE_SERVER=true"
+          - image: ubuntu-dev-wsl
+            build-args: "WSL_CONFIG=true"
 
     steps:
       - name: Checkout repository
@@ -51,8 +60,6 @@ jobs:
             TAG="$INPUT_TAG"
           fi
           echo "TAG=$TAG" >> $GITHUB_ENV
-          echo "DATE_TAG=${DATE}-${SHORT_SHA}"
-          echo "LATEST_TAG=latest"
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
@@ -61,6 +68,7 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: ${{ matrix.build-args }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ github.actor }}/${{ matrix.image }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ github.actor }}/${{ matrix.image }}:latest

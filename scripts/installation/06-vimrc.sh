@@ -1,13 +1,13 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
-# 动态获取脚本根目录
-SCRIPT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+# 标准脚本初始化
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$SCRIPT_DIR/configs/common.sh"
 
 log "Installing vimrc..."
 
-git clone --depth=1 https://github.com/amix/vimrc.git ~/.vim_runtime
+safe_git_clone "https://github.com/amix/vimrc.git" "$HOME/.vim_runtime"
 sh ~/.vim_runtime/install_awesome_vimrc.sh
 
 log "vimrc installed successfully"
