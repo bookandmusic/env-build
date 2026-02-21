@@ -24,7 +24,7 @@ mise use -g bat eza uv duf fd fzf gdu lazydocker lazygit ripgrep poetry \
 
 # Go 工具
 mise use -g \
-    go:github.com/incu6us/goimports-reviser/v3@latest \
+    go:github.com/incu6us/goimports-reviser/v3@v3.10.0 \
     go:mvdan.cc/gofumpt@latest \
     go:github.com/securego/gosec/v2/cmd/gosec@latest \
     go:github.com/fzipp/gocyclo/cmd/gocyclo@latest
