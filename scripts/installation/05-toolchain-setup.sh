@@ -34,15 +34,19 @@ mise use -g pipx:glances pipx:httpie pipx:ipython pipx:litecli pipx:mycli pipx:t
 
 log "Toolchain setup completed"
 
-log "Setting up Homebrew..."
-# 安装 Homebrew
-safe_git_clone "${TSINGHUA_MIRROR}/git/homebrew/install.git" "$HOME/brew-install"
-/bin/bash "$HOME/brew-install/install.sh"
-rm -rf "$HOME/brew-install"
+# Homebrew 仅在 WSL 镜像中安装
+if [ "${IMAGE_VARIANT}" = "ubuntu-wsl" ]; then
+    log "Setting up Homebrew..."
+    safe_git_clone "${TSINGHUA_MIRROR}/git/homebrew/install.git" "$HOME/brew-install"
+    /bin/bash "$HOME/brew-install/install.sh"
+    rm -rf "$HOME/brew-install"
 
-# 配置 Homebrew 环境
-add_to_zshrc 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
-add_to_zshrc "export HOMEBREW_PIP_INDEX_URL=\"${PYPI_MIRROR}\""
-add_to_zshrc "export HOMEBREW_BOTTLE_DOMAIN=\"${BREW_BOTTLE_DOMAIN}\""
-
-log "Homebrew setup completed"
+    # 配置 Homebrew 环境
+    add_to_zshrc 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"'
+    add_to_zshrc "export HOMEBREW_PIP_INDEX_URL=\"${PYPI_MIRROR}\""
+    add_to_zshrc "export HOMEBREW_BOTTLE_DOMAIN=\"${BREW_BOTTLE_DOMAIN}\""
+    
+    log "Homebrew setup completed"
+else
+    log "Skipping Homebrew setup (IMAGE_VARIANT=${IMAGE_VARIANT})"
+fi

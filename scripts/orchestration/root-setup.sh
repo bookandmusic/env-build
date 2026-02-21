@@ -13,14 +13,25 @@ log "Starting root-level setup..."
 log "1. Installing system dependencies..."
 "$SCRIPT_DIR/installation/01-system-deps.sh"
 
-log "2. Setting up Docker..."
-if [ "${INSTALL_DOCKER}" = "true" ]; then
-    "$SCRIPT_DIR/installation/02-docker-setup.sh"
-else
-    log "Skipping Docker setup (INSTALL_DOCKER not 'true')."
-fi
-
-log "3. Configuring environment..."
+log "2. Configuring user environment..."
 "$SCRIPT_DIR/installation/03-user-config.sh"
+
+log "3. Setting up Docker..."
+case "${DOCKER_MODE}" in
+    cli-only)
+        log "Installing Docker CLI only..."
+        "$SCRIPT_DIR/installation/02-docker-cli-setup.sh"
+        ;;
+    full)
+        log "Installing Docker Engine (full)..."
+        "$SCRIPT_DIR/installation/02-docker-engine-setup.sh"
+        ;;
+    none)
+        log "Skipping Docker setup (DOCKER_MODE=none)"
+        ;;
+    *)
+        warn "Unknown DOCKER_MODE: ${DOCKER_MODE}, skipping Docker setup"
+        ;;
+esac
 
 log "Root-level setup completed successfully"

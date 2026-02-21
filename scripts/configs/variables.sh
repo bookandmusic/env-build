@@ -1,18 +1,32 @@
 #!/bin/bash
 set -eo pipefail
 
-# 环境变量默认值和验证
-INSTALL_DOCKER="${INSTALL_DOCKER:-true}"
+# 环境变量默认值
+IMAGE_VARIANT="${IMAGE_VARIANT:-ubuntu-dev}"
+DOCKER_MODE="${DOCKER_MODE:-cli-only}"
 INSTALL_CODE_SERVER="${INSTALL_CODE_SERVER:-false}"
 CONFIG_USER="${CONFIG_USER:-true}"
-WSL_CONFIG="${WSL_CONFIG:-true}"
+WSL_CONFIG="${WSL_CONFIG:-false}"
+
+# 向后兼容：INSTALL_DOCKER 映射到 DOCKER_MODE
+if [ -n "${INSTALL_DOCKER:-}" ]; then
+    if [ "${INSTALL_DOCKER}" = "true" ]; then
+        DOCKER_MODE="full"
+    else
+        DOCKER_MODE="none"
+    fi
+fi
 
 # 环境变量验证函数
 validate_environment_variables() {
     local errors=()
     
-    if [[ ! "${INSTALL_DOCKER}" =~ ^(true|false)$ ]]; then
-        errors+=("INSTALL_DOCKER must be 'true' or 'false', got '${INSTALL_DOCKER}'")
+    if [[ ! "${IMAGE_VARIANT}" =~ ^(code-server|ubuntu-dev|ubuntu-wsl)$ ]]; then
+        errors+=("IMAGE_VARIANT must be 'code-server', 'ubuntu-dev', or 'ubuntu-wsl', got '${IMAGE_VARIANT}'")
+    fi
+    
+    if [[ ! "${DOCKER_MODE}" =~ ^(none|cli-only|full)$ ]]; then
+        errors+=("DOCKER_MODE must be 'none', 'cli-only', or 'full', got '${DOCKER_MODE}'")
     fi
     
     if [[ ! "${INSTALL_CODE_SERVER}" =~ ^(true|false)$ ]]; then
@@ -32,6 +46,7 @@ validate_environment_variables() {
     fi
     
     log "Environment variables validated successfully"
+    log "IMAGE_VARIANT=${IMAGE_VARIANT}, DOCKER_MODE=${DOCKER_MODE}"
 }
 
 check_disk_space() {

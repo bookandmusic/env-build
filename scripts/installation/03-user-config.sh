@@ -8,19 +8,25 @@ source "$SCRIPT_DIR/configs/common.sh"
 # 使用环境变量控制WSL配置
 if [ "${WSL_CONFIG}" = "true" ]; then
     log "Configuring WSL environment..."
-    mkdir -p /etc
-    create_config_file /etc/wsl.conf \
-'[boot]
-systemd=true
-[user]
-default=ubuntu'
+    
+    # 复制 WSL 配置文件
+    if [ -f "$SCRIPT_DIR/configs/wsl.conf" ]; then
+        cp "$SCRIPT_DIR/configs/wsl.conf" /etc/wsl.conf
+        log "WSL config copied to /etc/wsl.conf"
+    fi
 fi
 
 # 仅对选择的用户配置代码块使用CONFIG_USER环境变量
 if [ "${CONFIG_USER}" = "true" ]; then
     log "Configuring user environment..."
 
-    # 创建用户和权限
+    # 创建 ubuntu 用户（如果不存在）
+    if ! id ubuntu &>/dev/null; then
+        log "Creating ubuntu user..."
+        useradd -m -s /bin/bash -G sudo ubuntu
+    fi
+
+    # 设置密码和权限
     echo "ubuntu:1" | chpasswd
     usermod -aG sudo ubuntu
     chsh -s "$(which zsh)" ubuntu
