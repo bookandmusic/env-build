@@ -23,9 +23,10 @@ create_config_file "/etc/apt/sources.list.d/docker.list" \
 install_apt_packages \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# 配置 Docker 用户和镜像
-if id ubuntu &>/dev/null; then
+# 配置 Docker 用户组（Engine 安装会自动创建 docker 组）
+if id ubuntu &>/dev/null && getent group docker >/dev/null; then
     usermod -aG docker ubuntu
+    log "Added ubuntu user to docker group"
 fi
 
 mkdir -p /etc/docker

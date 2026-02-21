@@ -22,10 +22,4 @@ create_config_file "/etc/apt/sources.list.d/docker.list" \
 # 仅安装 CLI 和插件
 install_apt_packages docker-ce-cli docker-buildx-plugin docker-compose-plugin
 
-# 配置 ubuntu 用户 docker 组（用于 socket 挂载）
-if id ubuntu &>/dev/null; then
-    usermod -aG docker ubuntu
-    log "Added ubuntu user to docker group"
-fi
-
 log "Docker CLI setup completed"

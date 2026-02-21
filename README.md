@@ -34,6 +34,7 @@ docker pull ghcr.io/bookandmusic/code-server:latest
 docker run -d \
   -p 22:22 -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add $(stat -c '%g' /var/run/docker.sock) \
   --name code-server \
   ghcr.io/bookandmusic/code-server:latest
 
@@ -72,6 +73,7 @@ docker pull ghcr.io/bookandmusic/ubuntu-dev:latest
 docker run -d \
   -p 2222:22 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add $(stat -c '%g' /var/run/docker.sock) \
   --name ubuntu-dev \
   ghcr.io/bookandmusic/ubuntu-dev:latest
 
@@ -281,14 +283,17 @@ su - ubuntu
 
 ### Q: Docker Socket 挂载权限问题？
 
-**A**: 首次挂载后需重新登录以生效 docker 组权限：
+**A**: 需要将容器内用户添加到宿主机 docker 组：
 
 ```bash
-# 退出容器
-exit
+# 启动时添加 docker 组权限
+docker run -d \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add $(stat -c '%g' /var/run/docker.sock) \
+  ghcr.io/bookandmusic/ubuntu-dev:latest
 
-# 重新登录
-docker exec -it -u ubuntu <container_name> zsh
+# 或者使用 sudo（ubuntu 用户有 sudo 权限）
+docker exec -u ubuntu <container> sudo docker ps
 ```
 
 ### Q: WSL 中 systemd 未启动？
