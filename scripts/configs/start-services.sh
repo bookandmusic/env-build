@@ -7,7 +7,9 @@ echo "[$(date +'%Y-%m-%d %H:%M:%S')] Starting services for ${IMAGE_VARIANT}..." 
 
 # 启动 SSH 服务
 echo "[$(date +'%Y-%m-%d %H:%M:%S')] Starting SSH service..." >&2
-service ssh start
+# 使用 sudo 执行需要 root 权限的命令
+sudo mkdir -p /run/sshd
+sudo service ssh start
 
 # 根据镜像变体启动不同服务
 case "${IMAGE_VARIANT}" in
