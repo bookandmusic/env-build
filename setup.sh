@@ -259,11 +259,41 @@ setup_vim() {
     sh ~/.vim_runtime/install_awesome_vimrc.sh
 }
 
+setup_ai_tools() {
+    log "Installing AI coding tools..."
+
+    npm install -g opencode-ai
+    npm install -g @openai/codex
+    npm install -g @anthropic-ai/claude-code
+
+    # 更新别名：up-oc / up-cx / up-cl / up-ai
+    add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest"'
+    add_to_zshrc 'alias up-cx="npm install -g @openai/codex@latest"'
+    add_to_zshrc 'alias up-cl="npm install -g @anthropic-ai/claude-code@latest"'
+    add_to_zshrc 'alias up-ai="up-oc && up-cx && up-cl"'
+
+    # 仅 ubuntu-dev 需要在线服务（WSL 使用 systemd）
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        log "Creating startup script for opencode serve..."
+        cat > "$HOME/start.sh" << 'SHEOF'
+#!/bin/bash
+
+eval "$(/home/ubuntu/.local/bin/mise activate bash)"
+
+sudo service ssh start || true
+
+exec opencode serve --hostname 0.0.0.0 --port 4096
+SHEOF
+        chmod +x "$HOME/start.sh"
+    fi
+}
+
 setup_user() {
     log "Starting user-level setup..."
     setup_oh_my_zsh
     setup_toolchain
     setup_vim
+    setup_ai_tools
 
     log "Cleaning up..."
     rm -rf /home/ubuntu/.cache/*

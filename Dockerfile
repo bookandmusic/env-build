@@ -20,8 +20,8 @@ USER ubuntu
 WORKDIR /home/ubuntu
 RUN ["/bin/bash", "/tmp/setup.sh"]
 
-EXPOSE 22
-CMD ["sleep", "infinity"]
+EXPOSE 22 4096
+CMD ["/home/ubuntu/start.sh"]
 
 # ============ ubuntu-wsl 变体 ============
 FROM base AS ubuntu-wsl
