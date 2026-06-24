@@ -10,8 +10,7 @@ set -eo pipefail
 # 镜像变体：ubuntu-dev（轻量容器）或 ubuntu-wsl（WSL2 完整环境）
 IMAGE_VARIANT="${IMAGE_VARIANT:-ubuntu-dev}"
 
-# 国内镜像源，加速依赖下载
-TSINGHUA_MIRROR="https://mirrors.tuna.tsinghua.edu.cn"
+# Docker Hub 镜像加速（仅对 docker pull 生效）
 DOCKER_MIRROR="https://docker.1ms.run"
 
 # ============================================================
@@ -144,12 +143,12 @@ create_user() {
 install_docker() {
     log "Setting up Docker..."
 
-    # 添加 Docker 官方 GPG 密钥和镜像源（走清华镜像）
+    # 添加 Docker 官方 GPG 密钥和 APT 源
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
     create_config_file "/etc/apt/sources.list.d/docker.list" \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${TSINGHUA_MIRROR}/docker-ce/linux/ubuntu $(lsb_release -cs) stable"
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
 
     # ubuntu-wsl 安装完整 Docker Engine；ubuntu-dev 仅安装 CLI
     if [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
@@ -262,6 +261,11 @@ setup_vim() {
 setup_ai_tools() {
     log "Installing AI coding tools..."
 
+    if [ -z "${CI:-}" ]; then
+        log "Configuring npmmirror for npm..."
+        npm config set registry https://registry.npmmirror.com
+    fi
+
     npm install -g opencode-ai
     npm install -g @openai/codex
     npm install -g @anthropic-ai/claude-code
@@ -275,14 +279,14 @@ setup_ai_tools() {
     # 仅 ubuntu-dev 需要在线服务（WSL 使用 systemd）
     if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
         log "Creating startup script for opencode serve..."
-        cat > "$HOME/start.sh" << 'SHEOF'
+        cat > "$HOME/start.sh" << SHEOF
 #!/bin/bash
 
-eval "$(/home/ubuntu/.local/bin/mise activate bash)"
+eval "\$(/home/ubuntu/.local/bin/mise activate bash)"
 
 sudo service ssh start || true
 
-exec opencode serve --hostname 0.0.0.0 --port 4096
+exec opencode serve --hostname 0.0.0.0 --port \${OPENCODE_PORT:-4096}
 SHEOF
         chmod +x "$HOME/start.sh"
     fi
