@@ -211,7 +211,24 @@ create_user() {
     curl https://chsrc.run/posix | bash -s -- -d /usr/local/bin
     
     log "Installing starship..."
-    curl -sS https://starship.rs/install.sh | sh -s -- -y -b /usr/local/bin
+    local starship_arch asset_url
+    case "$(uname -m)" in
+        x86_64|amd64)
+            starship_arch="x86_64-unknown-linux-gnu"
+            ;;
+        aarch64|arm64)
+            starship_arch="aarch64-unknown-linux-gnu"
+            ;;
+        *)
+            error "Unsupported architecture for starship: $(uname -m)"
+            ;;
+    esac
+    asset_url=$(curl -fsSL https://api.github.com/repos/starship/starship/releases/latest \
+        | jq -r ".assets[].browser_download_url | select(endswith(\"${starship_arch}.tar.gz\"))")
+    curl -fsSL "$asset_url" -o /tmp/starship.tar.gz
+    tar -xzf /tmp/starship.tar.gz -C /tmp
+    install -m 0755 /tmp/starship /usr/local/bin/starship
+    rm -rf /tmp/starship /tmp/starship.tar.gz
 }
 
 install_docker() {
@@ -318,8 +335,8 @@ setup_toolchain() {
     curl https://mise.run | MISE_INSTALL_PATH="$HOME/.local/bin/mise" sh
     add_to_zshrc 'eval "$($HOME/.local/bin/mise activate zsh)"'
     
-    # 激活 mise 环境
-    eval "$($HOME/.local/bin/mise activate zsh)"
+    # 激活 mise 环境（当前脚本由 bash 执行）
+    eval "$($HOME/.local/bin/mise activate bash)"
     
     # 配置 mise
     mise settings experimental=true
