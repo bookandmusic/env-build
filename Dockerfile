@@ -18,8 +18,6 @@ RUN /tmp/setup.sh
 
 USER ubuntu
 WORKDIR /home/ubuntu
-SHELL ["/bin/zsh", "-lc"]
-
 RUN ["/bin/bash", "/tmp/setup.sh"]
 
 EXPOSE 22
@@ -34,8 +32,6 @@ RUN /tmp/setup.sh
 
 USER ubuntu
 WORKDIR /home/ubuntu
-SHELL ["/bin/zsh", "-lc"]
-
 RUN ["/bin/bash", "/tmp/setup.sh"]
 
 USER root

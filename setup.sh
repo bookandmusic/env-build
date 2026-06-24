@@ -1,14 +1,16 @@
 #!/bin/bash
+# 遇到错误立即退出，管道中任一命令失败也退出
 set -eo pipefail
 
 # ============================================================
 # env-build 统一安装脚本
-# 通过 id -u 自动判断 root/user 阶段
+# 单一入口，通过 id -u 自动判断以 root 还是 ubuntu 用户执行
 # ============================================================
 
+# 镜像变体：ubuntu-dev（轻量容器）或 ubuntu-wsl（WSL2 完整环境）
 IMAGE_VARIANT="${IMAGE_VARIANT:-ubuntu-dev}"
 
-# 镜像源
+# 国内镜像源，加速依赖下载
 TSINGHUA_MIRROR="https://mirrors.tuna.tsinghua.edu.cn"
 DOCKER_MIRROR="https://docker.1ms.run"
 
@@ -16,25 +18,25 @@ DOCKER_MIRROR="https://docker.1ms.run"
 # 公共函数
 # ============================================================
 
+# 带时间戳的日志输出，统一写往 stderr
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2
 }
 
+# 错误日志并立即退出
 error() {
     echo "[ERROR] $(date +'%Y-%m-%d %H:%M:%S') $*" >&2
     exit 1
 }
 
-warn() {
-    echo "[WARN] $(date +'%Y-%m-%d %H:%M:%S') $*" >&2
-}
-
+# 检查命令是否存在，缺失则报错退出
 check_command() {
     if ! command -v "$1" &> /dev/null; then
         error "Required command '$1' not found"
     fi
 }
 
+# 批量安装 APT 包，自动清理列表缓存以减少镜像层体积
 install_apt_packages() {
     local packages=("$@")
     log "Installing APT packages: ${packages[*]}"
@@ -44,6 +46,7 @@ install_apt_packages() {
     rm -rf /var/lib/apt/lists/*
 }
 
+# 安全克隆：如果目标目录已存在则跳过，保证幂等性
 safe_git_clone() {
     local repo_url="$1"
     local target_dir="$2"
@@ -59,6 +62,7 @@ safe_git_clone() {
         error "Failed to clone $repo_url"
 }
 
+# 向 .zshrc 追加配置，已存在则跳过，保证幂等
 add_to_zshrc() {
     local line="$1"
     local target="${HOME}/.zshrc"
@@ -67,6 +71,7 @@ add_to_zshrc() {
     fi
 }
 
+# 创建配置文件，支持设置权限
 create_config_file() {
     local filepath="$1"
     local content="$2"
@@ -100,6 +105,7 @@ create_user() {
         useradd -m -s /bin/bash -G sudo ubuntu
     fi
 
+    # 设置密码为 "1"，方便首次登录；sudo 免密码
     echo "ubuntu:1" | chpasswd
     usermod -aG sudo ubuntu
     chsh -s "$(which zsh)" ubuntu
@@ -107,23 +113,26 @@ create_user() {
     create_config_file /etc/sudoers.d/ubuntu \
         'ubuntu ALL=(ALL) NOPASSWD:ALL' 440
 
+    # chsrc：一键切换系统镜像源的命令行工具
     log "Installing chsrc..."
     check_command "curl"
     curl https://chsrc.run/posix | bash -s -- -d /usr/local/bin
 
+    # Starship：跨 Shell 的极简提示符
     log "Installing starship..."
     local starship_arch asset_url
     case "$(uname -m)" in
         x86_64|amd64)
-            starship_arch="x86_64-unknown-linux-gnu"
+            starship_arch="x86_64-unknown-linux-musl"
             ;;
         aarch64|arm64)
-            starship_arch="aarch64-unknown-linux-gnu"
+            starship_arch="aarch64-unknown-linux-musl"
             ;;
         *)
             error "Unsupported architecture for starship: $(uname -m)"
             ;;
     esac
+    # 从 GitHub API 获取最新 release 的下载 URL，再下载并安装
     asset_url=$(curl -fsSL https://api.github.com/repos/starship/starship/releases/latest \
         | jq -r ".assets[].browser_download_url | select(endswith(\"${starship_arch}.tar.gz\"))")
     curl -fsSL "$asset_url" -o /tmp/starship.tar.gz
@@ -135,12 +144,14 @@ create_user() {
 install_docker() {
     log "Setting up Docker..."
 
+    # 添加 Docker 官方 GPG 密钥和镜像源（走清华镜像）
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
     create_config_file "/etc/apt/sources.list.d/docker.list" \
         "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${TSINGHUA_MIRROR}/docker-ce/linux/ubuntu $(lsb_release -cs) stable"
 
+    # ubuntu-wsl 安装完整 Docker Engine；ubuntu-dev 仅安装 CLI
     if [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
         log "Installing Docker Engine (full)..."
         install_apt_packages \
@@ -151,6 +162,7 @@ install_docker() {
             log "Added ubuntu user to docker group"
         fi
 
+        # 配置 Docker 镜像加速
         mkdir -p /etc/docker
         create_config_file "/etc/docker/daemon.json" \
             '{
@@ -163,6 +175,7 @@ install_docker() {
 }
 
 setup_wsl_config() {
+    # WSL 专用配置：启用 systemd、默认用户、Windows 路径互通
     if [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
         log "Configuring WSL environment..."
         create_config_file /etc/wsl.conf \
@@ -198,6 +211,7 @@ setup_oh_my_zsh() {
 
     mkdir -p "$HOME/.oh-my-zsh/custom/plugins"
 
+    # 常用 Zsh 插件：自动建议、语法高亮、补全增强
     local plugins=(
         "zsh-users/zsh-autosuggestions"
         "zsh-users/zsh-syntax-highlighting"
@@ -210,32 +224,37 @@ setup_oh_my_zsh() {
         safe_git_clone "https://github.com/${plugin}" "$HOME/.oh-my-zsh/custom/plugins/${name}"
     done
 
+    # 从模板生成 .zshrc，再替换主题和插件列表
     cp "$HOME/.oh-my-zsh/templates/zshrc.zsh-template" "$HOME/.zshrc"
 
     sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="agnoster"/g' "$HOME/.zshrc"
     sed -i 's/plugins=(git)/plugins=(git sudo z zsh-autosuggestions zsh-syntax-highlighting zsh-completions python golang starship)/g' "$HOME/.zshrc"
 
     mkdir -p ~/.config
+    # Starship 纯文本符号主题，避免终端字体不兼容
     starship preset plain-text-symbols -o ~/.config/starship.toml
 }
 
 setup_toolchain() {
     log "Setting up development toolchain..."
 
-    check_command "curl"
+    # mise：多语言版本管理器，替代 asdf/nvm/pyenv
     curl https://mise.run | MISE_INSTALL_PATH="$HOME/.local/bin/mise" sh
     add_to_zshrc 'eval "$($HOME/.local/bin/mise activate zsh)"'
 
     eval "$($HOME/.local/bin/mise activate bash)"
 
+    # 启用实验特性以支持更多后端（如 uv）
     mise settings experimental=true
 
+    # 安装常用运行时和工具
     mise use -g python@3.13 go@1.25 node@24 uv
 
 }
 
 setup_vim() {
     log "Installing vimrc..."
+    # amix/vimrc：经过大量用户验证的 Vim 配置集
     safe_git_clone "https://github.com/amix/vimrc.git" "$HOME/.vim_runtime"
     sh ~/.vim_runtime/install_awesome_vimrc.sh
 }
@@ -263,6 +282,7 @@ main() {
         error "IMAGE_VARIANT must be 'ubuntu-dev' or 'ubuntu-wsl', got '${IMAGE_VARIANT}'"
     fi
 
+    # 自动判断：root → 系统配置，非 root → 用户配置
     if [ "$(id -u)" -eq 0 ]; then
         setup_root
     else
