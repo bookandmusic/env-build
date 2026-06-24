@@ -241,13 +241,16 @@ setup_toolchain() {
     curl https://mise.run | MISE_INSTALL_PATH="$HOME/.local/bin/mise" sh
     add_to_zshrc 'eval "$($HOME/.local/bin/mise activate zsh)"'
 
-    eval "$($HOME/.local/bin/mise activate bash)"
+    export PATH="$HOME/.local/bin:$PATH"
 
     # 启用实验特性以支持更多后端（如 uv）
     mise settings experimental=true
 
     # 安装常用运行时和工具
     mise use -g python@3.13 go@1.25 node@24 uv
+
+    # 在工具安装完成后激活，确保 PATH 中包含已安装的运行时
+    eval "$($HOME/.local/bin/mise activate bash)"
 
 }
 
