@@ -50,6 +50,7 @@ docker rm ubuntu-dev-wsl-export
 
 ```bash
 bash -n setup.sh
+bash -n start.sh
 ```
 
 ## 架构
@@ -74,6 +75,7 @@ bash -n setup.sh
 ### 核心配置
 
 - `setup.sh` — 唯一安装入口，合并公共函数、系统依赖、用户配置、Docker、Zsh、mise、Vim
+- `start.sh` — 容器启动脚本（mise activate + ssh + opencode serve），由 Dockerfile 安装到 `/usr/local/bin/`
 - `Dockerfile` — 两阶段构建：`ubuntu-dev` 和 `ubuntu-wsl`
 - `.github/workflows/docker-images.yaml` — 构建并推送两个镜像，导出 WSL tarball
 

@@ -190,12 +190,32 @@ appendWindowsPath=true'
     fi
 }
 
+install_opencode_service() {
+    log "Installing opencode service..."
+
+    [ -f /tmp/opencode.init ] || error "opencode.init not found at /tmp/opencode.init"
+
+    cp /tmp/opencode.init /etc/init.d/opencode
+    chmod 755 /etc/init.d/opencode
+
+    mkdir -p /var/run/opencode
+    touch /var/log/opencode.log
+    chown ubuntu:ubuntu /var/run/opencode /var/log/opencode.log
+
+    if command -v update-rc.d &>/dev/null && [ -d /etc/init.d/rc2.d ]; then
+        update-rc.d opencode defaults
+    fi
+}
+
 setup_root() {
     log "Starting root-level setup..."
     install_system_deps
     create_user
     install_docker
     setup_wsl_config
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        install_opencode_service
+    fi
     log "Root-level setup completed"
 }
 
@@ -274,25 +294,14 @@ setup_ai_tools() {
     npm install -g @anthropic-ai/claude-code
 
     # 更新别名：up-oc / up-cx / up-cl / up-ai
-    add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest"'
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo service opencode restart"'
+    else
+        add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest"'
+    fi
     add_to_zshrc 'alias up-cx="npm install -g @openai/codex@latest"'
     add_to_zshrc 'alias up-cl="npm install -g @anthropic-ai/claude-code@latest"'
     add_to_zshrc 'alias up-ai="up-oc && up-cx && up-cl"'
-
-    # 仅 ubuntu-dev 需要在线服务（WSL 使用 systemd）
-    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
-        log "Creating startup script for opencode serve..."
-        cat > "$HOME/start.sh" << SHEOF
-#!/bin/bash
-
-eval "\$(/home/ubuntu/.local/bin/mise activate bash)"
-
-sudo service ssh start || true
-
-exec opencode serve --hostname 0.0.0.0 --port \${OPENCODE_PORT:-4096}
-SHEOF
-        chmod +x "$HOME/start.sh"
-    fi
 }
 
 setup_user() {

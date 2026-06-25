@@ -7,7 +7,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 SHELL ["/bin/bash", "-c"]
 
 COPY setup.sh /tmp/setup.sh
-RUN chmod +x /tmp/setup.sh
+COPY start.sh /tmp/start.sh
+COPY opencode.init /tmp/opencode.init
+RUN chmod +x /tmp/setup.sh /tmp/start.sh
 
 # ============ ubuntu-dev 变体 ============
 FROM base AS ubuntu-dev
@@ -19,9 +21,10 @@ RUN /tmp/setup.sh
 USER ubuntu
 WORKDIR /home/ubuntu
 RUN ["/bin/bash", "/tmp/setup.sh"]
+RUN sudo cp /tmp/start.sh /usr/local/bin/start.sh
 
 EXPOSE 22 4096
-CMD ["/home/ubuntu/start.sh"]
+CMD ["/usr/local/bin/start.sh"]
 
 # ============ ubuntu-wsl 变体 ============
 FROM base AS ubuntu-wsl
