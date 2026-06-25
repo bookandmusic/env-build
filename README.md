@@ -15,10 +15,9 @@
 
 所有镜像包含：
 
-- **运行时**：Node.js 24, Python 3.13, Go 1.25（通过 mise 管理）
-- **CLI 工具**：bat, eza, fd, fzf, ripgrep, lazydocker, lazygit 等
-- **开发工具**：goimports-reviser, gofumpt, gosec, glances, httpie 等
-- **基础工具**：netcat, curl, wget, git, vim, zsh + Oh My Zsh
+- **运行时**：Node.js 24, Python 3.13, Go 1.25, uv（通过 mise 管理）
+- **AI 工具**：opencode-ai, codex, claude-code
+- **基础工具**：curl, wget, git, vim, zsh + Oh My Zsh, Starship
 
 ## 快速开始
 
@@ -42,16 +41,18 @@ docker run -d \
 ssh ubuntu@localhost -p 2222  # 密码: 1
 
 # 容器内操作
-docker ps  # 通过 socket 操作宿主机 Docker
-mise list  # 查看已安装工具
-node --version
+docker ps                          # 通过 socket 操作宿主机 Docker
+service opencode start             # 启动 opencode 服务
+service opencode status            # 查看 opencode 状态
+tail -f ~/.opencode-server/logs/opencode.log  # 查看 opencode 日志
 ```
 
 **特性**：
 
-- SSH Server（端口 22）
+- SSH Server（端口 22，容器启动即就绪）
 - Docker CLI（通过 socket 操作宿主机 Docker）
 - mise + 完整运行时工具
+- opencode 由用户登录后通过 `service opencode start` 启动
 - 无 Code-Server
 - 无 Docker Engine
 - 无 Homebrew
@@ -219,7 +220,8 @@ Docker 模式由 `IMAGE_VARIANT` 自动推导：
 ### 核心配置
 
 - `setup.sh` — 唯一安装入口，合并公共函数、系统依赖、用户配置、Docker、Zsh、mise、Vim
-- `Dockerfile` — 两阶段构建：`ubuntu-dev` 和 `ubuntu-wsl`
+- `Dockerfile` — 多阶段构建：`ubuntu-dev` 和 `ubuntu-wsl`
+- `opencode.init` — ubuntu-wsl 的 SysV init 服务脚本
 - `.github/workflows/docker-images.yaml` — 构建并推送两个镜像，导出 WSL tarball
 
 ### Dockerfile
@@ -266,6 +268,19 @@ exec zsh -l
 mise list
 ```
 
+### Q: opencode 服务无法启动？
+
+查看日志排查问题：
+
+```bash
+service opencode status
+tail -f ~/.opencode-server/logs/opencode.log
+```
+
+日志和 PID 文件位置：
+- 日志：`~/.opencode-server/logs/opencode.log`
+- PID：`~/.opencode-server/run/opencode.pid`
+
 ## 镜像体积对比
 
 | 镜像 | 预估体积 | 说明 |
@@ -279,7 +294,7 @@ mise list
 - **Shell**: Zsh + Oh My Zsh
 - **包管理**: mise（运行时）, apt（系统包）
 - **容器化**: Docker + Docker Compose
-- **镜像源**: 清华大学开源镜像站、npmmirror、goproxy.io、docker.1ms.run
+- **镜像源**: npmmirror（npm）、docker.1ms.run（Docker）
 
 ## 贡献
 

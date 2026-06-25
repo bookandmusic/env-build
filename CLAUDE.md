@@ -75,9 +75,18 @@ bash -n start.sh
 ### 核心配置
 
 - `setup.sh` — 唯一安装入口，合并公共函数、系统依赖、用户配置、Docker、Zsh、mise、Vim
-- `start.sh` — 容器启动脚本（mise activate + ssh + opencode serve），由 Dockerfile 安装到 `/usr/local/bin/`
+- `opencode.init` — SysV init 服务脚本，管理 opencode 服务的启动、停止、重启和状态检查
 - `Dockerfile` — 两阶段构建：`ubuntu-dev` 和 `ubuntu-wsl`
 - `.github/workflows/docker-images.yaml` — 构建并推送两个镜像，导出 WSL tarball
+
+### opencode 服务
+
+- **服务管理**：`service opencode {start|stop|restart|status}`
+- **运行用户**：ubuntu
+- **工作目录**：`~/.opencode-server/`
+  - 日志：`~/.opencode-server/logs/opencode.log`
+  - PID：`~/.opencode-server/run/opencode.pid`
+- **端口**：4096（可通过 `OPENCODE_PORT` 环境变量修改）
 
 ### 环境变量控制
 
