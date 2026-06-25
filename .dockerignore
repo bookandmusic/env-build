@@ -1,0 +1,11 @@
+.git
+.github
+.gitignore
+.dockerignore
+CLAUDE.md
+README.md
+LICENSE
+*.md
+*.tar
+*.gz
+*.part*

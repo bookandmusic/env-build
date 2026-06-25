@@ -1,0 +1,10 @@
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+.env
+*.tar
+*.gz
+*.part*
+CLAUDE.md
