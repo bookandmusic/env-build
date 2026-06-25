@@ -24,7 +24,7 @@ RUN ["/bin/bash", "/tmp/setup.sh"]
 RUN sudo cp /tmp/start.sh /usr/local/bin/start.sh
 
 EXPOSE 22 4096
-CMD ["/usr/local/bin/start.sh"]
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
 
 # ============ ubuntu-wsl 变体 ============
 FROM base AS ubuntu-wsl

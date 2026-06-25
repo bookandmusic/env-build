@@ -191,19 +191,55 @@ appendWindowsPath=true'
 }
 
 install_opencode_service() {
-    log "Installing opencode service..."
+    log "Installing opencode service management..."
 
-    [ -f /tmp/opencode.init ] || error "opencode.init not found at /tmp/opencode.init"
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        log "Using supervisord for ubuntu-dev"
+        install_apt_packages supervisor
 
-    cp /tmp/opencode.init /etc/init.d/opencode
-    chmod 755 /etc/init.d/opencode
+        cat > /etc/supervisor/conf.d/opencode.conf << 'SUPERVISOR_EOF'
+[program:sshd]
+command=/usr/sbin/sshd -D
+autorestart=true
+stdout_logfile=/var/log/sshd.log
 
-    mkdir -p /var/run/opencode
-    touch /var/log/opencode.log
-    chown ubuntu:ubuntu /var/run/opencode /var/log/opencode.log
+[program:opencode]
+command=/usr/local/bin/start-opencode.sh
+user=ubuntu
+autorestart=true
+stdout_logfile=/var/log/opencode.log
+redirect_stderr=true
+stopasgroup=true
+stopsignal=TERM
+SUPERVISOR_EOF
 
-    if command -v update-rc.d &>/dev/null && [ -d /etc/init.d/rc2.d ]; then
-        update-rc.d opencode defaults
+        cat > /usr/local/bin/start-opencode.sh << 'START_EOF'
+#!/bin/bash
+export HOME=/home/ubuntu
+eval "$(/home/ubuntu/.local/bin/mise activate bash)"
+exec opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}
+START_EOF
+        chmod +x /usr/local/bin/start-opencode.sh
+
+        mkdir -p /var/run/opencode
+        touch /var/log/opencode.log
+        chown ubuntu:ubuntu /var/run/opencode /var/log/opencode.log
+
+    elif [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
+        log "Using SysV init for ubuntu-wsl"
+
+        [ -f /tmp/opencode.init ] || error "opencode.init not found at /tmp/opencode.init"
+
+        cp /tmp/opencode.init /etc/init.d/opencode
+        chmod 755 /etc/init.d/opencode
+
+        mkdir -p /var/run/opencode
+        touch /var/log/opencode.log
+        chown ubuntu:ubuntu /var/run/opencode /var/log/opencode.log
+
+        if command -v update-rc.d &>/dev/null && [ -d /etc/init.d/rc2.d ]; then
+            update-rc.d opencode defaults
+        fi
     fi
 }
 
@@ -213,9 +249,7 @@ setup_root() {
     create_user
     install_docker
     setup_wsl_config
-    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
-        install_opencode_service
-    fi
+    install_opencode_service
     log "Root-level setup completed"
 }
 
@@ -295,7 +329,7 @@ setup_ai_tools() {
 
     # 更新别名：up-oc / up-cx / up-cl / up-ai
     if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
-        add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo service opencode restart"'
+        add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo supervisorctl restart opencode"'
     else
         add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest"'
     fi
