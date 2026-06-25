@@ -28,6 +28,11 @@ error() {
     exit 1
 }
 
+# 警告日志
+warn() {
+    echo "[WARN] $(date +'%Y-%m-%d %H:%M:%S') $*" >&2
+}
+
 # 检查命令是否存在，缺失则报错退出
 check_command() {
     if ! command -v "$1" &> /dev/null; then
@@ -51,21 +56,24 @@ safe_git_clone() {
     local target_dir="$2"
     local depth="${3:-1}"
 
-    if [ -d "$target_dir" ]; then
-        log "Directory $target_dir already exists, skipping clone"
+    if [ -d "$target_dir/.git" ]; then
+        log "Repository $target_dir already exists, skipping clone"
         return 0
     fi
 
     log "Cloning $repo_url to $target_dir"
-    git clone --depth="$depth" "$repo_url" "$target_dir" || \
+    if ! git clone --depth="$depth" "$repo_url" "$target_dir"; then
+        rm -rf "$target_dir"  # 清理失败的残留
         error "Failed to clone $repo_url"
+    fi
 }
 
 # 向 .zshrc 追加配置，已存在则跳过，保证幂等
 add_to_zshrc() {
     local line="$1"
     local target="${HOME}/.zshrc"
-    if ! grep -qF "$line" "$target" 2>/dev/null; then
+    [ -f "$target" ] || touch "$target"
+    if ! grep -qxF "$line" "$target" 2>/dev/null; then
         echo "$line" >> "$target"
     fi
 }
@@ -89,36 +97,29 @@ install_system_deps() {
     log "Installing system dependencies..."
     install_apt_packages \
         curl wget sudo git vim unzip zip tar gnupg lsb-release software-properties-common \
-        ca-certificates zsh build-essential jq \
-        openssh-client openssh-server
+        ca-certificates zsh build-essential jq netcat-openbsd procps \
+        openssh-client openssh-server \
+        iputils-ping dnsutils telnet \
+        htop tree tmux lsof strace
 
     update-alternatives --install /usr/bin/editor editor /usr/bin/vim 100
     update-alternatives --set editor /usr/bin/vim
 }
 
-create_user() {
-    log "Configuring user environment..."
-
-    if ! id ubuntu &>/dev/null; then
-        log "Creating ubuntu user..."
-        useradd -m -s /bin/bash -G sudo ubuntu
-    fi
-
-    # 设置密码为 "1"，方便首次登录；sudo 免密码
-    echo "ubuntu:1" | chpasswd
-    usermod -aG sudo ubuntu
-    chsh -s "$(which zsh)" ubuntu
-
-    create_config_file /etc/sudoers.d/ubuntu \
-        'ubuntu ALL=(ALL) NOPASSWD:ALL' 440
-
-    # chsrc：一键切换系统镜像源的命令行工具
+install_chsrc() {
     log "Installing chsrc..."
     check_command "curl"
-    curl https://chsrc.run/posix | bash -s -- -d /usr/local/bin
+    local script
+    script=$(curl -fsSL https://chsrc.run/posix) || error "Failed to download chsrc installer"
+    [ -n "$script" ] || error "Empty response from chsrc.run"
+    echo "$script" | bash -s -- -d /usr/local/bin || error "Failed to install chsrc"
+    [ -x /usr/local/bin/chsrc ] || error "chsrc binary not found after installation"
+}
 
-    # Starship：跨 Shell 的极简提示符
+install_starship() {
     log "Installing starship..."
+    check_command "curl"
+    check_command "jq"
     local starship_arch asset_url
     case "$(uname -m)" in
         x86_64|amd64)
@@ -131,44 +132,63 @@ create_user() {
             error "Unsupported architecture for starship: $(uname -m)"
             ;;
     esac
-    # 从 GitHub API 获取最新 release 的下载 URL，再下载并安装
     asset_url=$(curl -fsSL https://api.github.com/repos/starship/starship/releases/latest \
-        | jq -r ".assets[].browser_download_url | select(endswith(\"${starship_arch}.tar.gz\"))")
-    curl -fsSL "$asset_url" -o /tmp/starship.tar.gz
-    tar -xzf /tmp/starship.tar.gz -C /tmp
+        | jq -r ".assets[].browser_download_url | select(endswith(\"${starship_arch}.tar.gz\"))") || \
+        error "Failed to fetch starship release info"
+    [ -n "$asset_url" ] || error "No matching starship asset found for ${starship_arch}"
+    curl -fsSL "$asset_url" -o /tmp/starship.tar.gz || error "Failed to download starship"
+    tar -xzf /tmp/starship.tar.gz -C /tmp || error "Failed to extract starship"
+    [ -f /tmp/starship ] || error "starship binary not found in archive"
     install -m 0755 /tmp/starship /usr/local/bin/starship
     rm -rf /tmp/starship /tmp/starship.tar.gz
 }
 
-install_docker() {
-    log "Setting up Docker..."
+create_user() {
+    log "Configuring user environment..."
 
-    # 添加 Docker 官方 GPG 密钥和 APT 源
+    if ! id ubuntu &>/dev/null; then
+        log "Creating ubuntu user..."
+        useradd -m -s /bin/bash -G sudo ubuntu
+        echo "ubuntu:1" | chpasswd
+    else
+        log "User ubuntu already exists, ensuring proper configuration..."
+    fi
+
+    usermod -aG sudo ubuntu 2>/dev/null || true
+    chsh -s "$(which zsh)" ubuntu 2>/dev/null || warn "Failed to set zsh as default shell for ubuntu"
+
+    create_config_file /etc/sudoers.d/ubuntu \
+        'ubuntu ALL=(ALL) NOPASSWD:ALL' 440
+}
+
+setup_docker_repository() {
+    log "Setting up Docker APT repository..."
     mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || \
+        error "Failed to add Docker GPG key"
 
     create_config_file "/etc/apt/sources.list.d/docker.list" \
         "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+}
 
-    # ubuntu-wsl 安装完整 Docker Engine；ubuntu-dev 仅安装 CLI
+install_docker() {
+    log "Installing Docker..."
+    setup_docker_repository
+
     if [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
-        log "Installing Docker Engine (full)..."
-        install_apt_packages \
-            docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        log "Installing Docker Engine (full) for WSL..."
+        install_apt_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
         if id ubuntu &>/dev/null && getent group docker >/dev/null; then
             usermod -aG docker ubuntu
             log "Added ubuntu user to docker group"
         fi
 
-        # 配置 Docker 镜像加速
         mkdir -p /etc/docker
         create_config_file "/etc/docker/daemon.json" \
-            '{
-    "registry-mirrors": ["'"${DOCKER_MIRROR}"'"]
-}'
+            '{"registry-mirrors": ["'"${DOCKER_MIRROR}"'"]}'
     else
-        log "Installing Docker CLI only..."
+        log "Installing Docker CLI only for container..."
         install_apt_packages docker-ce-cli docker-buildx-plugin docker-compose-plugin
     fi
 }
@@ -191,55 +211,20 @@ appendWindowsPath=true'
 }
 
 install_opencode_service() {
-    log "Installing opencode service management..."
+    log "Installing opencode service..."
 
-    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
-        log "Using supervisord for ubuntu-dev"
-        install_apt_packages supervisor
-
-        cat > /etc/supervisor/conf.d/opencode.conf << 'SUPERVISOR_EOF'
-[program:sshd]
-command=/usr/sbin/sshd -D
-autorestart=true
-stdout_logfile=/var/log/sshd.log
-
-[program:opencode]
-command=/usr/local/bin/start-opencode.sh
-user=ubuntu
-autorestart=true
-stdout_logfile=/var/log/opencode.log
-redirect_stderr=true
-stopasgroup=true
-stopsignal=TERM
-SUPERVISOR_EOF
-
-        cat > /usr/local/bin/start-opencode.sh << 'START_EOF'
-#!/bin/bash
-export HOME=/home/ubuntu
-eval "$(/home/ubuntu/.local/bin/mise activate bash)"
-exec opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}
-START_EOF
-        chmod +x /usr/local/bin/start-opencode.sh
-
-        mkdir -p /var/run/opencode
-        touch /var/log/opencode.log
-        chown ubuntu:ubuntu /var/run/opencode /var/log/opencode.log
-
-    elif [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
-        log "Using SysV init for ubuntu-wsl"
-
+    if [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
+        # systemd service (ubuntu-wsl)
+        [ -f /tmp/opencode.service ] || error "opencode.service not found at /tmp/opencode.service"
+        cp /tmp/opencode.service /etc/systemd/system/opencode.service
+        chmod 644 /etc/systemd/system/opencode.service
+        log "Installed systemd service for ubuntu-wsl"
+    else
+        # SysV init script (ubuntu-dev)
         [ -f /tmp/opencode.init ] || error "opencode.init not found at /tmp/opencode.init"
-
         cp /tmp/opencode.init /etc/init.d/opencode
         chmod 755 /etc/init.d/opencode
-
-        mkdir -p /var/run/opencode
-        touch /var/log/opencode.log
-        chown ubuntu:ubuntu /var/run/opencode /var/log/opencode.log
-
-        if command -v update-rc.d &>/dev/null && [ -d /etc/init.d/rc2.d ]; then
-            update-rc.d opencode defaults
-        fi
+        log "Installed SysV init script for ubuntu-dev"
     fi
 }
 
@@ -247,6 +232,8 @@ setup_root() {
     log "Starting root-level setup..."
     install_system_deps
     create_user
+    install_chsrc
+    install_starship
     install_docker
     setup_wsl_config
     install_opencode_service
@@ -264,7 +251,6 @@ setup_oh_my_zsh() {
 
     mkdir -p "$HOME/.oh-my-zsh/custom/plugins"
 
-    # 常用 Zsh 插件：自动建议、语法高亮、补全增强
     local plugins=(
         "zsh-users/zsh-autosuggestions"
         "zsh-users/zsh-syntax-highlighting"
@@ -277,35 +263,43 @@ setup_oh_my_zsh() {
         safe_git_clone "https://github.com/${plugin}" "$HOME/.oh-my-zsh/custom/plugins/${name}"
     done
 
-    # 从模板生成 .zshrc，再替换主题和插件列表
-    cp "$HOME/.oh-my-zsh/templates/zshrc.zsh-template" "$HOME/.zshrc"
-
-    sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="agnoster"/g' "$HOME/.zshrc"
-    sed -i 's/plugins=(git)/plugins=(git sudo z zsh-autosuggestions zsh-syntax-highlighting zsh-completions python golang starship)/g' "$HOME/.zshrc"
+    create_config_file "$HOME/.zshrc" \
+'export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="agnoster"
+plugins=(git sudo z zsh-autosuggestions zsh-syntax-highlighting zsh-completions python golang starship)
+source $ZSH/oh-my-zsh.sh'
 
     mkdir -p ~/.config
-    # Starship 纯文本符号主题，避免终端字体不兼容
     starship preset plain-text-symbols -o ~/.config/starship.toml
+}
+
+install_mise() {
+    log "Installing mise..."
+    mkdir -p "$HOME/.local/bin"
+
+    local mise_script
+    mise_script=$(curl -fsSL https://mise.run) || error "Failed to download mise installer"
+    [ -n "$mise_script" ] || error "Empty response from mise.run"
+    echo "$mise_script" | MISE_INSTALL_PATH="$HOME/.local/bin/mise" sh || error "Failed to install mise"
+    [ -x "$HOME/.local/bin/mise" ] || error "mise binary not found or not executable"
+
+    add_to_zshrc 'eval "$($HOME/.local/bin/mise activate zsh)"'
+    export PATH="$HOME/.local/bin:$PATH"
 }
 
 setup_toolchain() {
     log "Setting up development toolchain..."
+    install_mise
 
-    # mise：多语言版本管理器，替代 asdf/nvm/pyenv
-    curl https://mise.run | MISE_INSTALL_PATH="$HOME/.local/bin/mise" sh
-    add_to_zshrc 'eval "$($HOME/.local/bin/mise activate zsh)"'
+    "$HOME/.local/bin/mise" settings set experimental true
 
-    export PATH="$HOME/.local/bin:$PATH"
+    local tools=("python@3.13" "go@1.25" "node@24" "uv")
+    for tool in "${tools[@]}"; do
+        log "Installing $tool via mise..."
+        "$HOME/.local/bin/mise" use -g "$tool" || warn "Failed to install $tool, continuing..."
+    done
 
-    # 启用实验特性以支持更多后端（如 uv）
-    mise settings experimental=true
-
-    # 安装常用运行时和工具
-    mise use -g python@3.13 go@1.25 node@24 uv
-
-    # 在工具安装完成后激活，确保 PATH 中包含已安装的运行时
     eval "$($HOME/.local/bin/mise activate bash)"
-
 }
 
 setup_vim() {
@@ -327,12 +321,7 @@ setup_ai_tools() {
     npm install -g @openai/codex
     npm install -g @anthropic-ai/claude-code
 
-    # 更新别名：up-oc / up-cx / up-cl / up-ai
-    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
-        add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo supervisorctl restart opencode"'
-    else
-        add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest"'
-    fi
+    add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo service opencode restart"'
     add_to_zshrc 'alias up-cx="npm install -g @openai/codex@latest"'
     add_to_zshrc 'alias up-cl="npm install -g @anthropic-ai/claude-code@latest"'
     add_to_zshrc 'alias up-ai="up-oc && up-cx && up-cl"'

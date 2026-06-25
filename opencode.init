@@ -13,8 +13,9 @@ NAME="opencode"
 DAEMON_USER="ubuntu"
 DAEMON_HOME="/home/${DAEMON_USER}"
 MISE_BIN="${DAEMON_HOME}/.local/bin/mise"
-PIDFILE="/var/run/${NAME}/${NAME}.pid"
-LOGFILE="/var/log/${NAME}.log"
+OPENCODE_DIR="${DAEMON_HOME}/.opencode-server"
+PIDFILE="${OPENCODE_DIR}/run/${NAME}.pid"
+LOGFILE="${OPENCODE_DIR}/logs/${NAME}.log"
 OPENCODE_PORT="${OPENCODE_PORT:-4096}"
 
 do_start() {
@@ -23,10 +24,9 @@ do_start() {
         return 0
     fi
 
-    mkdir -p /var/run/${NAME}
-    chown "${DAEMON_USER}:${DAEMON_USER}" /var/run/${NAME}
-    touch "$LOGFILE"
-    chown "${DAEMON_USER}:${DAEMON_USER}" "$LOGFILE"
+    # 创建 opencode 工作目录（用户级，无需 chown）
+    su - "${DAEMON_USER}" -c "mkdir -p ${OPENCODE_DIR}/{run,logs}" || \
+        { echo "Failed to create ${OPENCODE_DIR} directories" >&2; return 1; }
 
     echo "Starting $NAME..."
     start-stop-daemon --start --quiet --background \
@@ -34,19 +34,26 @@ do_start() {
         --chuid "$DAEMON_USER" \
         --startas /bin/bash -- -c "
             export HOME=${DAEMON_HOME}
-            eval \"\$(${MISE_BIN} activate bash)\" >> ${LOGFILE} 2>&1
+            eval \"\$(${MISE_BIN} activate bash)\"
             exec opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT} >> ${LOGFILE} 2>&1
         "
 
-    # 验证进程确实启动
-    sleep 1
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-        echo "$NAME started (PID: $(cat "$PIDFILE"))"
-    else
-        echo "$NAME failed to start, check $LOGFILE" >&2
-        rm -f "$PIDFILE"
-        return 1
-    fi
+    # 验证进程和端口监听
+    local retry=0
+    while [ $retry -lt 5 ]; do
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            if command -v nc >/dev/null 2>&1 && nc -z 0.0.0.0 "$OPENCODE_PORT" 2>/dev/null; then
+                echo "$NAME started (PID: $(cat "$PIDFILE")), listening on port $OPENCODE_PORT"
+                return 0
+            fi
+        fi
+        sleep 1
+        retry=$((retry + 1))
+    done
+
+    echo "$NAME failed to start, check $LOGFILE" >&2
+    rm -f "$PIDFILE"
+    return 1
 }
 
 do_stop() {
