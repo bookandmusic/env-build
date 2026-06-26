@@ -50,7 +50,6 @@ docker rm ubuntu-dev-wsl-export
 
 ```bash
 bash -n setup.sh
-bash -n start.sh
 ```
 
 ## 架构
@@ -63,14 +62,17 @@ bash -n start.sh
 
 1. 安装系统基础包
 2. 创建 ubuntu 用户
-3. 安装 Docker CLI 或 Docker Engine
-4. 配置 WSL systemd（仅 ubuntu-wsl）
+3. 安装 chsrc 和 starship
+4. 安装 Docker CLI 或 Docker Engine
+5. 配置 WSL systemd（仅 ubuntu-wsl）
+6. 安装 opencode 服务管理脚本
 
 **User 阶段**：
 
 1. 安装 Zsh + Oh My Zsh + 插件
 2. 安装 mise 工具链
 3. 安装 Vim 配置
+4. 安装 AI 编程工具（opencode-ai、codex、claude-code）
 
 ### 核心配置
 
@@ -138,7 +140,6 @@ Docker 模式由 `IMAGE_VARIANT` 自动推导：
 
 项目全局使用国内镜像加速：
 
-- APT/PyPI/Homebrew：清华大学开源镜像站
 - NPM：npmmirror
 - Go：goproxy.io
 - Docker：docker.1ms.run

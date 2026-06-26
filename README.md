@@ -294,7 +294,7 @@ tail -f ~/.opencode-server/logs/opencode.log
 - **Shell**: Zsh + Oh My Zsh
 - **包管理**: mise（运行时）, apt（系统包）
 - **容器化**: Docker + Docker Compose
-- **镜像源**: npmmirror（npm）、docker.1ms.run（Docker）
+- **镜像源**: npmmirror（npm）、goproxy.io（Go）、docker.1ms.run（Docker）
 
 ## 贡献
 

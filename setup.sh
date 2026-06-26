@@ -13,6 +13,9 @@ IMAGE_VARIANT="${IMAGE_VARIANT:-ubuntu-dev}"
 # Docker Hub 镜像加速（仅对 docker pull 生效）
 DOCKER_MIRROR="https://docker.1ms.run"
 
+# Go 模块代理（运行时镜像源，安装完成后再配置）
+GOPROXY_MIRROR="https://goproxy.cn,direct"
+
 # ============================================================
 # 公共函数
 # ============================================================
@@ -96,10 +99,10 @@ create_config_file() {
 install_system_deps() {
     log "Installing system dependencies..."
     install_apt_packages \
-        curl wget sudo git vim unzip zip tar gnupg lsb-release software-properties-common \
-        ca-certificates zsh build-essential jq netcat-openbsd procps \
+        curl wget sudo git vim unzip zip tar gnupg lsb-release \
+        ca-certificates zsh jq netcat-openbsd procps \
         openssh-client openssh-server \
-        iputils-ping dnsutils telnet \
+        iproute2 iputils-ping dnsutils \
         htop tree tmux lsof strace
 
     update-alternatives --install /usr/bin/editor editor /usr/bin/vim 100
@@ -231,6 +234,11 @@ install_opencode_service() {
 setup_root() {
     log "Starting root-level setup..."
     install_system_deps
+    # git 安装后配置代理（configure_proxy 首次调用时 git 尚未安装）
+    if [ -n "${HTTP_PROXY:-}" ] && command -v git &>/dev/null; then
+        git config --global http.proxy "${HTTP_PROXY}"
+        git config --global https.proxy "${HTTPS_PROXY:-${HTTP_PROXY}}"
+    fi
     create_user
     install_chsrc
     install_starship
@@ -300,6 +308,16 @@ setup_toolchain() {
     done
 
     eval "$($HOME/.local/bin/mise activate bash)"
+
+    # 安装 Go 工具（构建时走代理或直连，不设置镜像源）
+    log "Installing Go tools..."
+    go install -v golang.org/x/tools/gopls@latest || warn "Failed to install gopls"
+    go install -v github.com/go-delve/delve/cmd/dlv@latest || warn "Failed to install dlv"
+
+    # 安装完成后再配置国内镜像源，避免干扰 CI 构建和代理
+    export GOPROXY="${GOPROXY_MIRROR}"
+    add_to_zshrc "export GOPROXY=\"${GOPROXY_MIRROR}\""
+    log "Configured GOPROXY=${GOPROXY_MIRROR}"
 }
 
 setup_vim() {
@@ -312,14 +330,15 @@ setup_vim() {
 setup_ai_tools() {
     log "Installing AI coding tools..."
 
+    npm install -g opencode-ai
+    npm install -g @openai/codex
+    npm install -g @anthropic-ai/claude-code
+
+    # 安装完成后再配置镜像源，避免干扰 CI 构建和代理
     if [ -z "${CI:-}" ]; then
         log "Configuring npmmirror for npm..."
         npm config set registry https://registry.npmmirror.com
     fi
-
-    npm install -g opencode-ai
-    npm install -g @openai/codex
-    npm install -g @anthropic-ai/claude-code
 
     add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo service opencode restart"'
     add_to_zshrc 'alias up-cx="npm install -g @openai/codex@latest"'
@@ -343,6 +362,28 @@ setup_user() {
 # 主逻辑
 # ============================================================
 
+# 配置构建时代理（apt / git / npm / curl 均通过环境变量生效）
+configure_proxy() {
+    if [ -n "${HTTP_PROXY:-}" ]; then
+        log "Configuring proxy: ${HTTP_PROXY}"
+        # apt 代理（apt 在 base 镜像中已可用）
+        cat > /etc/apt/apt.conf.d/99proxy << EOF
+Acquire::http::Proxy "${HTTP_PROXY}";
+Acquire::https::Proxy "${HTTPS_PROXY:-${HTTP_PROXY}}";
+EOF
+        # git 代理（git 可能还未安装，延迟到 install_system_deps 之后）
+        if command -v git &>/dev/null; then
+            git config --global http.proxy "${HTTP_PROXY}"
+            git config --global https.proxy "${HTTPS_PROXY:-${HTTP_PROXY}}"
+        fi
+    else
+        log "No proxy configured, using direct connection"
+        rm -f /etc/apt/apt.conf.d/99proxy
+        git config --global --unset http.proxy 2>/dev/null || true
+        git config --global --unset https.proxy 2>/dev/null || true
+    fi
+}
+
 main() {
     log "env-build setup starting..."
     log "IMAGE_VARIANT=${IMAGE_VARIANT}"
@@ -353,6 +394,7 @@ main() {
 
     # 自动判断：root → 系统配置，非 root → 用户配置
     if [ "$(id -u)" -eq 0 ]; then
+        configure_proxy
         setup_root
     else
         setup_user

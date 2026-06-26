@@ -25,7 +25,7 @@ do_start() {
     fi
 
     # 创建 opencode 工作目录（用户级，无需 chown）
-    su - "${DAEMON_USER}" -c "mkdir -p ${OPENCODE_DIR}/{run,logs}" || \
+    su - "${DAEMON_USER}" -c 'mkdir -p '"${OPENCODE_DIR}"'/{run,logs}' || \
         { echo "Failed to create ${OPENCODE_DIR} directories" >&2; return 1; }
 
     echo "Starting $NAME..."
