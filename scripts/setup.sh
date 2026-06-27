@@ -7,14 +7,11 @@ set -eo pipefail
 # 单一入口，通过 id -u 自动判断以 root 还是 ubuntu 用户执行
 # ============================================================
 
-# 镜像变体：ubuntu-dev（轻量容器）或 ubuntu-wsl（WSL2 完整环境）
-IMAGE_VARIANT="${IMAGE_VARIANT:-ubuntu-dev}"
-
 # Docker Hub 镜像加速（仅对 docker pull 生效）
 DOCKER_MIRROR="https://docker.1ms.run"
 
-# Go 模块代理（运行时镜像源，安装完成后再配置）
-GOPROXY_MIRROR="https://goproxy.cn,direct"
+# 镜像变体：ubuntu-dev（轻量容器）或 ubuntu-wsl（WSL2 完整环境）
+IMAGE_VARIANT="${IMAGE_VARIANT:-ubuntu-dev}"
 
 # ============================================================
 # 公共函数
@@ -72,10 +69,27 @@ safe_git_clone() {
 }
 
 # 向 .zshrc 追加配置，已存在则跳过，保证幂等
+# 对于 export 变量，如果已存在不同值的同名变量，先移除旧行再追加新行
 add_to_zshrc() {
     local line="$1"
     local target="${HOME}/.zshrc"
     [ -f "$target" ] || touch "$target"
+
+    # 提取变量名（用于 export VAR=... 模式）
+    local var_name=""
+    if [[ "$line" =~ ^export\ ([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+        var_name="${BASH_REMATCH[1]}"
+    fi
+
+    if [ -n "$var_name" ]; then
+        # 对于变量声明：移除旧行，追加新行
+        local tmp_file
+        tmp_file=$(mktemp)
+        grep -vxE "export ${var_name}=.*" "$target" 2>/dev/null > "$tmp_file" || true
+        mv "$tmp_file" "$target"
+    fi
+
+    # 去重追加
     if ! grep -qxF "$line" "$target" 2>/dev/null; then
         echo "$line" >> "$target"
     fi
@@ -214,20 +228,24 @@ appendWindowsPath=true'
 }
 
 install_opencode_service() {
-    log "Installing opencode service..."
-
-    if [ "$IMAGE_VARIANT" = "ubuntu-wsl" ]; then
-        # systemd service (ubuntu-wsl)
-        [ -f /tmp/opencode.service ] || error "opencode.service not found at /tmp/opencode.service"
-        cp /tmp/opencode.service /etc/systemd/system/opencode.service
-        chmod 644 /etc/systemd/system/opencode.service
-        log "Installed systemd service for ubuntu-wsl"
-    else
-        # SysV init script (ubuntu-dev)
+    # opencode web 服务仅在 ubuntu-dev 中安装
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        log "Installing opencode service..."
         [ -f /tmp/opencode.init ] || error "opencode.init not found at /tmp/opencode.init"
         cp /tmp/opencode.init /etc/init.d/opencode
         chmod 755 /etc/init.d/opencode
-        log "Installed SysV init script for ubuntu-dev"
+        log "Installed SysV init script for opencode"
+    fi
+}
+
+install_cloudcli_service() {
+    # cloudcli 仅在 ubuntu-dev 中使用 SysV init 管理
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        log "Installing cloudcli service..."
+        [ -f /tmp/cloudcli.init ] || error "cloudcli.init not found at /tmp/cloudcli.init"
+        cp /tmp/cloudcli.init /etc/init.d/cloudcli
+        chmod 755 /etc/init.d/cloudcli
+        log "Installed SysV init script for cloudcli"
     fi
 }
 
@@ -245,6 +263,7 @@ setup_root() {
     install_docker
     setup_wsl_config
     install_opencode_service
+    install_cloudcli_service
     log "Root-level setup completed"
 }
 
@@ -309,15 +328,10 @@ setup_toolchain() {
 
     eval "$($HOME/.local/bin/mise activate bash)"
 
-    # 安装 Go 工具（构建时走代理或直连，不设置镜像源）
+    # 安装 Go 工具（构建时走代理或直连）
     log "Installing Go tools..."
     go install -v golang.org/x/tools/gopls@latest || warn "Failed to install gopls"
     go install -v github.com/go-delve/delve/cmd/dlv@latest || warn "Failed to install dlv"
-
-    # 安装完成后再配置国内镜像源，避免干扰 CI 构建和代理
-    export GOPROXY="${GOPROXY_MIRROR}"
-    add_to_zshrc "export GOPROXY=\"${GOPROXY_MIRROR}\""
-    log "Configured GOPROXY=${GOPROXY_MIRROR}"
 }
 
 setup_vim() {
@@ -333,17 +347,30 @@ setup_ai_tools() {
     npm install -g opencode-ai
     npm install -g @openai/codex
     npm install -g @anthropic-ai/claude-code
+    npm install -g cc-switch-cli
 
-    # 安装完成后再配置镜像源，避免干扰 CI 构建和代理
-    if [ -z "${CI:-}" ]; then
-        log "Configuring npmmirror for npm..."
-        npm config set registry https://registry.npmmirror.com
+    # cloudcli 仅在 ubuntu-dev 中安装（Web UI 用于远程访问容器）
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        log "Installing CloudCLI for ubuntu-dev..."
+        npm approve-scripts @cloudcli-ai/cloudcli 2>/dev/null || true
+        npm install -g @cloudcli-ai/cloudcli
+        chmod +x "$(npm root -g)/@cloudcli-ai/cloudcli/dist-server/server/cli.js" 2>/dev/null || true
+        add_to_zshrc 'alias up-cc="npm install -g @cloudcli-ai/cloudcli@latest"'
+        add_to_zshrc 'alias webui="cloudcli --host 0.0.0.0 --port 3001"'
     fi
 
+    # 镜像源由 chsrc 工具在运行时按需配置，不在构建时固化
     add_to_zshrc 'alias up-oc="npm install -g opencode-ai@latest && sudo service opencode restart"'
     add_to_zshrc 'alias up-cx="npm install -g @openai/codex@latest"'
     add_to_zshrc 'alias up-cl="npm install -g @anthropic-ai/claude-code@latest"'
-    add_to_zshrc 'alias up-ai="up-oc && up-cx && up-cl"'
+    add_to_zshrc 'alias up-sw="npm install -g cc-switch-cli@latest"'
+
+    # up-ai / up-oc 仅在 ubuntu-dev 中引用 opencode 服务
+    if [ "$IMAGE_VARIANT" = "ubuntu-dev" ]; then
+        add_to_zshrc 'alias up-ai="up-oc && up-cx && up-cl && up-sw"'
+    else
+        add_to_zshrc 'alias up-ai="up-cx && up-cl && up-sw"'
+    fi
 }
 
 setup_user() {

@@ -20,14 +20,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 SHELL ["/bin/bash", "-c"]
 
-COPY --chmod=755 setup.sh /tmp/setup.sh
+COPY --chmod=755 scripts/setup.sh /tmp/setup.sh
 
 # ============ ubuntu-dev 变体 ============
 FROM base AS ubuntu-dev
 
 ENV IMAGE_VARIANT=ubuntu-dev
 
-COPY opencode.init /tmp/opencode.init
+COPY scripts/services/opencode.init /tmp/opencode.init
+COPY scripts/services/cloudcli.init /tmp/cloudcli.init
 RUN /tmp/setup.sh
 
 USER ubuntu
@@ -35,9 +36,9 @@ WORKDIR /home/ubuntu
 RUN ["/bin/bash", "/tmp/setup.sh"]
 
 USER root
-RUN mkdir -p /run/sshd && ssh-keygen -A && rm -f /tmp/setup.sh /tmp/opencode.init
+RUN mkdir -p /run/sshd && ssh-keygen -A && rm -f /tmp/setup.sh /tmp/opencode.init /tmp/cloudcli.init
 
-EXPOSE 22
+EXPOSE 22 3001 4096
 HEALTHCHECK --interval=30s --timeout=3s \
     CMD ss -tln | grep -q ':22 ' || exit 1
 CMD ["/usr/sbin/sshd", "-D"]
@@ -47,7 +48,6 @@ FROM base AS ubuntu-wsl
 
 ENV IMAGE_VARIANT=ubuntu-wsl
 
-COPY opencode.service /tmp/opencode.service
 RUN /tmp/setup.sh
 
 USER ubuntu
@@ -55,7 +55,7 @@ WORKDIR /home/ubuntu
 RUN ["/bin/bash", "/tmp/setup.sh"]
 
 USER root
-RUN mkdir -p /run/sshd && ssh-keygen -A && rm -f /tmp/setup.sh /tmp/opencode.service
+RUN mkdir -p /run/sshd && ssh-keygen -A && rm -f /tmp/setup.sh
 WORKDIR /root
 EXPOSE 22
 HEALTHCHECK --interval=30s --timeout=3s \

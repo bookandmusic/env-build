@@ -1,0 +1,91 @@
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides:          cloudcli
+# Required-Start:    $local_fs $network $remote_fs
+# Required-Stop:     $local_fs $network $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: cloudcli
+# Description:       CloudCLI Web UI for AI coding tools
+### END INIT INFO
+
+NAME="cloudcli"
+DAEMON_USER="ubuntu"
+DAEMON_HOME="/home/${DAEMON_USER}"
+MISE_BIN="${DAEMON_HOME}/.local/bin/mise"
+CLOUDCLI_DIR="${DAEMON_HOME}/.cloudcli"
+PIDFILE="${CLOUDCLI_DIR}/run/${NAME}.pid"
+LOGFILE="${CLOUDCLI_DIR}/logs/${NAME}.log"
+CLOUDCLI_PORT="${CLOUDCLI_PORT:-3001}"
+
+do_start() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "$NAME is already running (PID: $(cat "$PIDFILE"))"
+        return 0
+    fi
+
+    su - "${DAEMON_USER}" -c 'mkdir -p '"${CLOUDCLI_DIR}"'/{run,logs}' || \
+        { echo "Failed to create ${CLOUDCLI_DIR} directories" >&2; return 1; }
+
+    echo "Starting $NAME..."
+    start-stop-daemon --start --quiet --background \
+        --make-pidfile --pidfile "$PIDFILE" \
+        --chuid "$DAEMON_USER" \
+        --startas /bin/bash -- -c "
+            export HOME=${DAEMON_HOME}
+            eval \"\$(${MISE_BIN} activate bash)\"
+            exec cloudcli --host 0.0.0.0 --port ${CLOUDCLI_PORT} >> ${LOGFILE} 2>&1
+        "
+
+    local retry=0
+    while [ $retry -lt 5 ]; do
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            if command -v nc >/dev/null 2>&1 && nc -z 0.0.0.0 "$CLOUDCLI_PORT" 2>/dev/null; then
+                echo "$NAME started (PID: $(cat "$PIDFILE")), listening on port $CLOUDCLI_PORT"
+                return 0
+            fi
+        fi
+        sleep 1
+        retry=$((retry + 1))
+    done
+
+    echo "$NAME failed to start, check $LOGFILE" >&2
+    rm -f "$PIDFILE"
+    return 1
+}
+
+do_stop() {
+    if [ ! -f "$PIDFILE" ] || ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "$NAME is not running"
+        rm -f "$PIDFILE"
+        return 0
+    fi
+
+    echo "Stopping $NAME..."
+    if start-stop-daemon --stop --quiet --pidfile "$PIDFILE" --retry=TERM/5/KILL/3; then
+        rm -f "$PIDFILE"
+        echo "$NAME stopped"
+    else
+        echo "$NAME failed to stop cleanly, forcing cleanup" >&2
+        rm -f "$PIDFILE"
+        return 1
+    fi
+}
+
+do_status() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "$NAME is running (PID: $(cat "$PIDFILE"))"
+    else
+        echo "$NAME is not running"
+        rm -f "$PIDFILE"
+        exit 3
+    fi
+}
+
+case "$1" in
+    start)   do_start ;;
+    stop)    do_stop ;;
+    restart) do_stop; do_start ;;
+    status)  do_status ;;
+    *)       echo "Usage: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
