@@ -4,8 +4,9 @@
 .dockerignore
 CLAUDE.md
 README.md
-LICENSE
+PLAN.md
 *.md
 *.tar
 *.gz
 *.part*
+test/

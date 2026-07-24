@@ -1,0 +1,24 @@
+# AI 工具配置
+# type: npm    → npm install -g {package}@latest
+# type: binary → 从 GitHub Release 下载二进制到 ~/.local/bin/
+
+tools:
+  - name: opencode
+    type: npm
+    package: opencode-ai
+
+  - name: codex
+    type: npm
+    package: "@openai/codex"
+
+  - name: claude-code
+    type: npm
+    package: "@anthropic-ai/claude-code"
+
+  - name: cc-switch
+    type: binary
+    repo: SaladDay/cc-switch-cli
+    # version: v1.0.0    # 可选，不填则用 latest
+    filename:
+      x86_64: cc-switch-linux-amd64
+      aarch64: cc-switch-linux-arm64

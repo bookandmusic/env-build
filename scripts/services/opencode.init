@@ -24,7 +24,6 @@ do_start() {
         return 0
     fi
 
-    # 创建 opencode 工作目录（用户级，无需 chown）
     su - "${DAEMON_USER}" -c 'mkdir -p '"${OPENCODE_DIR}"'/{run,logs}' || \
         { echo "Failed to create ${OPENCODE_DIR} directories" >&2; return 1; }
 
@@ -38,7 +37,6 @@ do_start() {
             exec opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT} >> ${LOGFILE} 2>&1
         "
 
-    # 验证进程和端口监听
     local retry=0
     while [ $retry -lt 5 ]; do
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then

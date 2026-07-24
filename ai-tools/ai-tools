@@ -1,0 +1,284 @@
+#!/bin/bash
+set -eo pipefail
+
+# ============================================================
+# ai-tools — AI 工具统一管理脚本
+# 用法：ai-tools {install|update|list}
+# 配置：~/.config/ai-tools/ai-tools.yaml 或 $AI_TOOLS_CONFIG
+# ============================================================
+
+CONFIG_FILE="${AI_TOOLS_CONFIG:-$HOME/.config/ai-tools/ai-tools.yaml}"
+INSTALL_DIR="$HOME/.local/bin"
+
+# 颜色
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}[ai-tools]${NC} $*"; }
+warn() { echo -e "${YELLOW}[ai-tools]${NC} $*"; }
+err()  { echo -e "${RED}[ai-tools]${NC} $*" >&2; }
+
+# 简易 YAML 解析：提取 tools 列表
+# 输出格式：name|type|package|repo|version|filename_x86_64|filename_aarch64
+parse_tools() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        err "Config file not found: $CONFIG_FILE"
+        exit 1
+    fi
+
+    local name="" type="" package="" repo="" version="" fn_x86="" fn_arm=""
+    local in_filename=0
+
+    while IFS= read -r line; do
+        # 跳过注释和空行
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line// /}" ]] && continue
+
+        # 新工具条目
+        if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*name:[[:space:]]*(.*) ]]; then
+            # 输出上一个
+            if [ -n "$name" ]; then
+                echo "${name}|${type}|${package}|${repo}|${version}|${fn_x86}|${fn_arm}"
+            fi
+            name="${BASH_REMATCH[1]}"
+            name="${name//\"/}"
+            type="" package="" repo="" version="" fn_x86="" fn_arm=""
+            in_filename=0
+            continue
+        fi
+
+        if [[ "$line" =~ ^[[:space:]]*type:[[:space:]]*(.*) ]]; then
+            type="${BASH_REMATCH[1]}"
+            type="${type//\"/}"
+            in_filename=0
+            continue
+        fi
+
+        if [[ "$line" =~ ^[[:space:]]*package:[[:space:]]*(.*) ]]; then
+            package="${BASH_REMATCH[1]}"
+            package="${package//\"/}"
+            in_filename=0
+            continue
+        fi
+
+        if [[ "$line" =~ ^[[:space:]]*repo:[[:space:]]*(.*) ]]; then
+            repo="${BASH_REMATCH[1]}"
+            repo="${repo//\"/}"
+            in_filename=0
+            continue
+        fi
+
+        if [[ "$line" =~ ^[[:space:]]*version:[[:space:]]*(.*) ]]; then
+            version="${BASH_REMATCH[1]}"
+            version="${version//\"/}"
+            in_filename=0
+            continue
+        fi
+
+        if [[ "$line" =~ ^[[:space:]]*filename: ]]; then
+            in_filename=1
+            continue
+        fi
+
+        if [ "$in_filename" -eq 1 ]; then
+            if [[ "$line" =~ ^[[:space:]]*x86_64:[[:space:]]*(.*) ]]; then
+                fn_x86="${BASH_REMATCH[1]}"
+                fn_x86="${fn_x86//\"/}"
+                continue
+            fi
+            if [[ "$line" =~ ^[[:space:]]*aarch64:[[:space:]]*(.*) ]]; then
+                fn_arm="${BASH_REMATCH[1]}"
+                fn_arm="${fn_arm//\"/}"
+                continue
+            fi
+            # 非 filename 子项，退出 filename 模式
+            in_filename=0
+        fi
+    done < "$CONFIG_FILE"
+
+    # 输出最后一个
+    if [ -n "$name" ]; then
+        echo "${name}|${type}|${package}|${repo}|${version}|${fn_x86}|${fn_arm}"
+    fi
+}
+
+# 安装/更新 npm 工具
+handle_npm() {
+    local name="$1" package="$2" mode="$3"
+
+    if [ "$mode" = "install" ] && command -v "$name" &>/dev/null; then
+        log "$name already installed, skipping (use 'update' to force)"
+        return 0
+    fi
+
+    log "${mode}: $name ($package)..."
+    if npm install -g "${package}@latest" 2>/dev/null; then
+        log "$name installed successfully"
+    else
+        warn "Failed to install $name, continuing..."
+        return 1
+    fi
+}
+
+# 安装/更新 binary 工具
+handle_binary() {
+    local name="$1" repo="$2" version="$3" fn_x86="$4" fn_arm="$5" mode="$6"
+
+    if [ "$mode" = "install" ] && [ -x "$INSTALL_DIR/$name" ]; then
+        log "$name already installed, skipping (use 'update' to force)"
+        return 0
+    fi
+
+    # 确定文件名
+    local arch
+    arch=$(uname -m)
+    local filename=""
+    case "$arch" in
+        x86_64|amd64)   filename="$fn_x86" ;;
+        aarch64|arm64)  filename="$fn_arm" ;;
+        *)              err "Unsupported architecture: $arch"; return 1 ;;
+    esac
+
+    if [ -z "$filename" ]; then
+        err "No filename configured for $name on $arch"
+        return 1
+    fi
+
+    # 拼 URL
+    local url
+    if [ -n "$version" ] && [ "$version" != "latest" ]; then
+        url="https://github.com/${repo}/releases/download/${version}/${filename}"
+    else
+        url="https://github.com/${repo}/releases/latest/download/${filename}"
+    fi
+
+    log "${mode}: $name from $url ..."
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local tmp_file="$tmp_dir/$filename"
+
+    if ! curl -fsSL "$url" -o "$tmp_file"; then
+        err "Failed to download $name"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    mkdir -p "$INSTALL_DIR"
+
+    # 根据后缀判断是否需要解压
+    case "$filename" in
+        *.tar.gz|*.tgz)
+            tar xzf "$tmp_file" -C "$tmp_dir"
+            # 找到解压出的二进制
+            local bin_file
+            bin_file=$(find "$tmp_dir" -type f -name "$name" | head -1)
+            if [ -z "$bin_file" ]; then
+                # 取第一个可执行文件或第一个文件
+                bin_file=$(find "$tmp_dir" -type f ! -name "*.tar.gz" ! -name "*.tgz" | head -1)
+            fi
+            mv "$bin_file" "$INSTALL_DIR/$name"
+            ;;
+        *.zip)
+            unzip -q "$tmp_file" -d "$tmp_dir"
+            local bin_file
+            bin_file=$(find "$tmp_dir" -type f -name "$name" | head -1)
+            if [ -z "$bin_file" ]; then
+                bin_file=$(find "$tmp_dir" -type f ! -name "*.zip" | head -1)
+            fi
+            mv "$bin_file" "$INSTALL_DIR/$name"
+            ;;
+        *)
+            # 无后缀，直接是二进制
+            mv "$tmp_file" "$INSTALL_DIR/$name"
+            ;;
+    esac
+
+    chmod +x "$INSTALL_DIR/$name"
+    rm -rf "$tmp_dir"
+
+    # 验证
+    if "$INSTALL_DIR/$name" --version &>/dev/null; then
+        log "$name installed successfully: $("$INSTALL_DIR/$name" --version 2>/dev/null | head -1)"
+    else
+        log "$name installed (version check skipped)"
+    fi
+}
+
+# 主命令
+cmd_install() {
+    log "Installing AI tools from $CONFIG_FILE ..."
+    local failed=0
+
+    while IFS='|' read -r name type package repo version fn_x86 fn_arm; do
+        case "$type" in
+            npm)    handle_npm "$name" "$package" "install" || ((failed++)) ;;
+            binary) handle_binary "$name" "$repo" "$version" "$fn_x86" "$fn_arm" "install" || ((failed++)) ;;
+            *)      warn "Unknown type '$type' for $name, skipping" ;;
+        esac
+    done < <(parse_tools)
+
+    if [ "$failed" -gt 0 ]; then
+        warn "$failed tool(s) failed to install"
+    else
+        log "All tools installed successfully"
+    fi
+}
+
+cmd_update() {
+    log "Updating AI tools from $CONFIG_FILE ..."
+    local failed=0
+
+    while IFS='|' read -r name type package repo version fn_x86 fn_arm; do
+        case "$type" in
+            npm)    handle_npm "$name" "$package" "update" || ((failed++)) ;;
+            binary) handle_binary "$name" "$repo" "$version" "$fn_x86" "$fn_arm" "update" || ((failed++)) ;;
+            *)      warn "Unknown type '$type' for $name, skipping" ;;
+        esac
+    done < <(parse_tools)
+
+    if [ "$failed" -gt 0 ]; then
+        warn "$failed tool(s) failed to update"
+    else
+        log "All tools updated successfully"
+    fi
+}
+
+cmd_list() {
+    log "Installed AI tools:"
+    echo ""
+
+    while IFS='|' read -r name type package repo version fn_x86 fn_arm; do
+        local ver="not installed"
+        case "$type" in
+            npm)
+                if command -v "$name" &>/dev/null; then
+                    ver=$(npm list -g "$package" 2>/dev/null | grep "$package" | sed 's/.*@//' || echo "installed")
+                fi
+                ;;
+            binary)
+                if [ -x "$INSTALL_DIR/$name" ]; then
+                    ver=$("$INSTALL_DIR/$name" --version 2>/dev/null | head -1 || echo "installed")
+                fi
+                ;;
+        esac
+        printf "  %-15s %-8s %s\n" "$name" "[$type]" "$ver"
+    done < <(parse_tools)
+}
+
+# 入口
+case "${1:-}" in
+    install) cmd_install ;;
+    update)  cmd_update ;;
+    list)    cmd_list ;;
+    *)
+        echo "Usage: ai-tools {install|update|list}"
+        echo ""
+        echo "  install   Install tools (skip if already installed)"
+        echo "  update    Update all tools to latest"
+        echo "  list      Show installed tools and versions"
+        exit 1
+        ;;
+esac

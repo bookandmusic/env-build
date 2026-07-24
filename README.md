@@ -1,163 +1,139 @@
-# Ubuntu 开发环境构建工具
+# env-build
 
-自动化构建标准化 Ubuntu 24.04 开发环境，支持两种镜像变体：Docker 容器和 WSL2。
+Ubuntu 24.04 开发环境镜像，包含 Node/Python/Go/Rust/Android 完整工具链，支持 Tauri Android 构建和远程无线调试。
 
-## 镜像变体
+## 内置工具链
 
-| 镜像 | 使用场景 | Docker 模式 | 核心特性 |
-|------|---------|------------|---------|
-| **ubuntu-dev** | Docker 容器 | CLI only | SSH + Docker CLI + mise + AI 工具 + opencode Web UI + CloudCLI Web UI |
-| **ubuntu-wsl** | WSL2 | 完整 Engine | systemd + SSH + 完整 Docker + mise + AI 工具 |
-
-### 工具链
-
-- **运行时**：Node.js 24、Python 3.13、Go 1.25、uv（mise 管理）
-- **AI 工具**：opencode-ai、codex、claude-code、cc-switch-cli
-- **Web UI**：cloudcli（仅 ubuntu-dev）
-- **基础工具**：git、vim、zsh + Oh My Zsh、Starship
-
-### 端口（ubuntu-dev）
-
-| 端口 | 服务 |
+| 类别 | 工具 |
 |------|------|
-| 22 | SSH |
-| 3001 | CloudCLI Web UI |
-| 4096 | opencode HTTP |
+| 语言 | Node.js 24、Python 3.13、Go 1.25、Rust stable（via mise + rustup） |
+| Android | JDK 17、Android SDK（API 35、build-tools 35、NDK 27）、ADB |
+| 终端 | Zsh + Oh My Zsh + Starship |
+| 编辑器 | Vim（精简配置） |
+| 容器 | Docker CLI |
+| 换源 | chsrc |
+| 服务 | opencode（:4096）、cloudcli Web UI（:3001）、sshd（:22） |
 
----
+## 快速使用
 
-## 快速开始
+```bash
+# 拉取镜像
+docker pull ghcr.io/bookandmusic/env-build:latest
 
-创建 `docker-compose.yml`：
+# 运行
+docker run -d \
+  --name dev \
+  -p 2222:22 \
+  -p 3001:3001 \
+  -p 4096:4096 \
+  -v ~/workspace:/home/ubuntu/workspace \
+  ghcr.io/bookandmusic/env-build:latest
+
+# SSH 连接
+ssh -p 2222 ubuntu@localhost
+```
+
+## AI 工具管理
+
+AI 工具不预装在镜像中，通过配置文件管理，运行时手动安装/更新：
+
+```bash
+# 首次安装所有 AI 工具
+ai-tools install
+
+# 更新所有 AI 工具到最新版
+ai-tools update
+
+# 查看已安装工具及版本
+ai-tools list
+```
+
+配置文件：`~/.config/ai-tools/ai-tools.yaml`
 
 ```yaml
-services:
-  ubuntu-dev:
-    image: ghcr.nju.edu.cn/bookandmusic/ubuntu-dev:latest
-    container_name: ubuntu-dev
-    restart: unless-stopped
-    ports:
-      - "2222:22"
-      - "3001:3001"
-      - "4096:4096"
-    volumes:
-      - ./data/claude:/home/ubuntu/.claude
-      - ./data/codex:/home/ubuntu/.codex
-      - ./data/opencode:/home/ubuntu/.config/opencode
-      - ./data/cloudcli:/home/ubuntu/.cloudcli
-      - ./data/cc-switch:/home/ubuntu/.cc-switch
-      - ./data/mise:/home/ubuntu/.config/mise
-      - ./workspace:/home/ubuntu/workspace
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - TZ=Asia/Shanghai
-    group_add:
-      - "999"  # stat -c '%g' /var/run/docker.sock
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+tools:
+  - name: opencode
+    type: npm
+    package: opencode-ai
+
+  - name: cc-switch
+    type: binary
+    repo: SaladDay/cc-switch-cli
+    filename:
+      x86_64: cc-switch-linux-amd64
+      aarch64: cc-switch-linux-arm64
 ```
 
-启动：
+支持两种类型：
+- `npm` — 通过 npm install -g 安装
+- `binary` — 从 GitHub Release 下载二进制到 ~/.local/bin/
+
+## 服务管理
 
 ```bash
-docker compose up -d
+# opencode HTTP 服务（端口 4096）
+sudo service opencode {start|stop|restart|status}
+
+# cloudcli Web UI（端口 3001）
+sudo service cloudcli {start|stop|restart|status}
 ```
 
-访问：
+## 无线调试（Android）
 
 ```bash
-ssh ubuntu@localhost -p 2222     # 密码: 1
-# 容器内执行
-webui                            # http://localhost:3001
+# 手机端开启无线调试后
+adb tcpip 5555
+adb connect <手机IP>:5555
+adb devices
 ```
-
-### 持久化目录
-
-| 目录 | 用途 |
-|------|------|
-| `data/claude` | Claude Code + CloudCLI 配置 |
-| `data/codex` | Codex 配置 |
-| `data/opencode` | OpenCode 配置 |
-| `data/cloudcli` | CloudCLI 数据库 |
-| `data/cc-switch` | cc-switch-cli 配置 |
-| `data/mise` | mise 工具链配置 |
-| `workspace` | 项目工作目录 |
-
-### 常用命令
-
-```bash
-docker compose up -d           # 启动
-docker compose down            # 停止
-docker compose logs -f         # 日志
-docker compose up -d --build   # 重建
-```
-
----
-
-## ubuntu-wsl
-
-从 [Releases](https://github.com/bookandmusic/env-build/releases) 下载导入：
-
-```powershell
-tar -xzf ubuntu-dev-wsl-amd64.tar.gz
-wsl --import UbuntuDev C:\WSL\UbuntuDev ubuntu-dev-wsl-amd64.tar
-wsl -d UbuntuDev
-```
-
----
 
 ## 本地构建
 
 ```bash
-docker build --target ubuntu-dev -t ubuntu-dev:latest .
-docker build --target ubuntu-wsl -t ubuntu-wsl:latest .
+# 构建镜像
+docker build -t env-build:local .
+
+# 带代理构建
+docker build --build-arg HTTP_PROXY=http://host:port -t env-build:local .
+
+# 运行测试
+bash test/build-and-test.sh
 ```
 
-WSL 导出：
+## CI/CD
+
+- 打 `v*` tag 自动构建并推送到 GHCR
+- 支持 `workflow_dispatch` 手动触发
+- 多架构：linux/amd64 + linux/arm64
 
 ```bash
-docker build --target ubuntu-wsl -t ubuntu-dev-wsl:latest .
-docker create --name tmp ubuntu-dev-wsl:latest && docker export tmp -o ubuntu-dev-wsl.tar && docker rm tmp
+# 发布新版本
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
----
+## 项目结构
 
-## 独立安装
-
-```bash
-sudo ./scripts/setup.sh        # root：系统依赖、Docker
-su - ubuntu && ./scripts/setup.sh  # user：zsh、工具链
 ```
-
----
-
-## AI 工具使用
-
-| 命令 | 说明 |
-|------|------|
-| `service cloudcli start` | 启动 CloudCLI Web UI（仅 ubuntu-dev） |
-| `service opencode start` | 启动 opencode 服务 |
-| `cc-switch-cli` | 切换 AI 提供商 |
-| `up-ai` | 更新所有 AI 工具 |
-
----
-
-## 技术栈
-
-Ubuntu 24.04 / Zsh / mise / Docker Compose
-
-## 镜像源
-
-构建时使用官方源。进入容器后使用 chsrc 按需切换镜像源：
-
-```bash
-# 切换 npm 镜像源
-chsrc npm npmmirror
-
-# 切换 Go 模块代理
-chsrc go goproxy.cn
+├── Dockerfile                     # 单一镜像构建
+├── .github/workflows/build.yaml   # CI 构建推送 GHCR
+├── scripts/
+│   ├── setup.sh                   # 主入口（自动判断 root/user）
+│   ├── 01-system-deps.sh          # 系统依赖
+│   ├── 02-user-setup.sh           # ubuntu 用户
+│   ├── 03-shell-env.sh            # zsh/starship/vim
+│   ├── 04-toolchain.sh            # mise/rust/android
+│   ├── 05-docker-cli.sh           # Docker CLI
+│   ├── 06-extra-tools.sh          # chsrc
+│   ├── 07-services.sh             # init 服务
+│   ├── services/
+│   │   ├── opencode.init
+│   │   └── cloudcli.init
+│   └── configs/
+│       └── vimrc
+├── ai-tools/
+│   ├── ai-tools                   # 管理脚本
+│   └── ai-tools.yaml              # 工具配置
+└── test/
+    └── build-and-test.sh
 ```
-
-## 许可证
-
-MIT License
