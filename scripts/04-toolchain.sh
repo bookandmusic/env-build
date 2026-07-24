@@ -86,6 +86,11 @@ setup_android_sdk() {
 
     export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
+    # 清除空代理变量（Dockerfile ENV 未传 ARG 时为空字符串，Java sdkmanager 无法解析）
+    [ -z "$HTTP_PROXY" ] && unset HTTP_PROXY http_proxy
+    [ -z "$HTTPS_PROXY" ] && unset HTTPS_PROXY https_proxy
+    [ -z "$ALL_PROXY" ] && unset ALL_PROXY all_proxy
+
     # 接受 license
     log "Accepting Android SDK licenses..."
     yes | sdkmanager --licenses > /dev/null 2>&1 || true
