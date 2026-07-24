@@ -5,33 +5,24 @@ install_docker_cli() {
     log "Installing Docker CLI..."
     check_command "curl"
 
-    local arch
-    case "$(uname -m)" in
-        x86_64|amd64)   arch="x86_64" ;;
-        aarch64|arm64)   arch="aarch64" ;;
-        *)               error "Unsupported architecture for Docker CLI: $(uname -m)" ;;
-    esac
+    # 添加 Docker 官方 apt 源，仅安装 CLI
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
 
-    local version
-    version=$(curl -fsSL https://api.github.com/repos/docker/cli/releases/latest \
-        | jq -r '.tag_name' | sed 's/^v//') || error "Failed to get Docker CLI version"
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
 
-    local url="https://download.docker.com/linux/static/stable/${arch}/docker-${version}.tgz"
-    log "Downloading Docker CLI v${version}..."
+    apt-get update -qq
+    apt-get install -y -qq --no-install-recommends docker-ce-cli
+    rm -rf /var/lib/apt/lists/*
 
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    curl -fsSL "$url" | tar xz -C "$tmp_dir"
-    mv "$tmp_dir/docker/docker" /usr/local/bin/docker
-    chmod +x /usr/local/bin/docker
-    rm -rf "$tmp_dir"
-
-    # 将 ubuntu 用户加入 docker 组（如果组存在）
+    # 将 ubuntu 用户加入 docker 组
     if getent group docker &>/dev/null; then
         usermod -aG docker ubuntu
     fi
 
-    log "Docker CLI v${version} installed"
+    log "Docker CLI installed: $(docker --version)"
 }
 
 install_docker_cli
