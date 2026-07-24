@@ -10,6 +10,7 @@ setup_mise() {
     mise_script=$(curl -fsSL https://mise.run) || error "Failed to download mise installer"
     echo "$mise_script" | MISE_INSTALL_PATH="$HOME/.local/bin/mise" sh || error "Failed to install mise"
 
+    add_to_zshrc 'export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"'
     add_to_zshrc 'eval "$($HOME/.local/bin/mise activate zsh)"'
     export PATH="$HOME/.local/bin:$PATH"
 }
@@ -67,24 +68,17 @@ setup_android_sdk() {
     export ANDROID_HOME="$HOME/Android/Sdk"
     mkdir -p "$ANDROID_HOME"
 
-    # 下载 commandline-tools
+    # 下载 commandline-tools（使用固定已知版本 URL，避免网页解析）
     local cmdline_tools_dir="$ANDROID_HOME/cmdline-tools"
     if [ ! -d "$cmdline_tools_dir/latest" ]; then
         log "Downloading Android commandline-tools..."
-        local arch
-        case "$(uname -m)" in
-            x86_64|amd64)   arch="linux" ;;
-            aarch64|arm64)  arch="linux" ;;
-            *)              error "Unsupported architecture for Android SDK: $(uname -m)" ;;
-        esac
-
-        local download_url
-        download_url=$(curl -fsSL "https://developer.android.com/studio" \
-            | grep -oP "https://dl\.google\.com/android/repository/commandlinetools-${arch}-[0-9]+_latest\.zip" \
-            | head -1) || error "Failed to get commandline-tools download URL"
+        # 固定版本号，定期更新
+        local cmdline_version="11076708"
+        local url="https://dl.google.com/android/repository/commandlinetools-linux-${cmdline_version}_latest.zip"
 
         local tmp_zip="/tmp/cmdline-tools.zip"
-        curl -fsSL "$download_url" -o "$tmp_zip" || error "Failed to download commandline-tools"
+        curl -fsSL "$url" -o "$tmp_zip" || error "Failed to download commandline-tools"
+        mkdir -p "$cmdline_tools_dir"
         unzip -q "$tmp_zip" -d "$cmdline_tools_dir"
         mv "$cmdline_tools_dir/cmdline-tools" "$cmdline_tools_dir/latest"
         rm -f "$tmp_zip"

@@ -48,7 +48,7 @@ setup_starship() {
     rm -rf "$tmp_dir"
 
     mkdir -p "$HOME/.config"
-    starship preset plain-text-symbols -o "$HOME/.config/starship.toml"
+    "$HOME/.local/bin/starship" preset plain-text-symbols -o "$HOME/.config/starship.toml"
     add_to_zshrc 'eval "$(starship init zsh)"'
 }
 
