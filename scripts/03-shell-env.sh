@@ -1,6 +1,9 @@
 #!/bin/bash
 # Shell 环境配置（ubuntu 用户执行）
 
+# 确保用户目录存在
+mkdir -p "$HOME/.local/bin" "$HOME/.config"
+
 setup_oh_my_zsh() {
     log "Installing Oh My Zsh..."
     if [ ! -d "$HOME/.oh-my-zsh" ]; then
